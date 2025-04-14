@@ -206,7 +206,7 @@ end
 
 
 
-function Fanfic:fetchFanficsByFandom(selectedFandom, sortBy)
+function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
     local NetworkMgr = require("ui/network/manager")
 
     local success, ficResults, fetchNextPage

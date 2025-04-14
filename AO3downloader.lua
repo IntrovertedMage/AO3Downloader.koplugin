@@ -579,7 +579,13 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
     sort_column = sort_column or "revised_at" -- Default to sorting by most recently updated
 
     -- Encode the tag name for use in the URL
-    local encoded_tag_name = tag_name:gsub(" ", "%%20"):gsub("|", "%%7C"):gsub("%(", "%%28"):gsub("%)", "%%29")
+    local encoded_tag_name = tag_name
+        :gsub("/", "*s*") -- Replace / with */*
+        :gsub(" & ", "*a*")
+        :gsub(" ", "%%20")
+        :gsub("|", "%%7C")
+        :gsub("%(", "%%28")
+        :gsub("%)", "%%29")
 
     -- Construct the URL
     local url = string.format("%s/tags/%s/works?page=%d&work_search[sort_column]=%s", getAO3URL(), encoded_tag_name, page, sort_column)
