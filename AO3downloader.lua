@@ -349,17 +349,19 @@ function AO3Downloader:getWorkMetadata(work_id)
     local iswipElement = root:select("dt.status")[1]
 
     -- Extract additional metadata
-    local fandomElement = root:select(".fandom > ul")[1] -- Fandoms are usually in the `.fandoms` class
-    local publishedElement = root:select("dd.published")[1] -- Published date is often in the `.datetime` class
-    local updatedElement = root:select("dd.status")[1] -- Published date is often in the `.datetime` class
-    local chaptersElement = root:select("dd.chapters")[1] -- Chapters are in the `<dd>` element with class `chapters`
-    local languageElement = root:select("dd.language")[1] -- Language is in the `<dd>` element with class `language`
+    local fandomElement = root:select(".fandom > ul")[1]
+    local publishedElement = root:select("dd.published")[1]
+    local updatedElement = root:select("dd.status")[1]
+    local chaptersElement = root:select("dd.chapters")[1]
+    local languageElement = root:select("dd.language")[1]
 
     -- Extract stats
     local hitsElement = root:select("dd.hits")[1]
     local kudosElement = root:select("dd.kudos")[1]
     local commentsElement = root:select("dd.comments")[1]
     local bookmarksElement = root:select("dd.bookmarks > a")[1]
+    local wordCountElement = root:select("dd.words")[1]
+    local chapterIDElements = root:select("#chapter_index > li > form > p > select > option")
 
     -- Extract metadata values
     local title = titleElement and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1")) or "Unknown title" -- Trim whitespace
@@ -371,6 +373,18 @@ function AO3Downloader:getWorkMetadata(work_id)
             :gsub("<[^>]+>", "") -- Remove other HTML tags
             :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
     ) or "No summary available"
+
+
+    local chapterData = {}
+    if chapterIDElements then
+        for __, option in pairs(chapterIDElements) do
+            logger.dbg("chapter element:" ..  option:gettext())
+            if option.attributes.value then
+                table.insert(chapterData, {id = option.attributes.value, name = option:getcontent()})
+            end
+        end
+    end
+
     local tags = {}
     if tagsElement then
         for _, tag in ipairs(tagsElement:select("li > a")) do
@@ -441,6 +455,7 @@ function AO3Downloader:getWorkMetadata(work_id)
     local kudos = kudosElement and parseToCodepoints(kudosElement:getcontent():gsub("<[^>]+>", "")) or "0"
     local comments = commentsElement and parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", "")) or "0"
     local bookmarks = bookmarksElement and parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", "")) or "0"
+    local wordcount = wordCountElement and wordCountElement:getcontent():gsub(",","") or "unknown"
 
     local iswip = iswipElement and iswipElement:getcontent():gsub(":", "") -- Remove colon
     if iswip == "Completed" then
@@ -454,6 +469,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         id = work_id,
         title = title,
         author = author,
+        chapterData = chapterData,
         summary = summary,
         tags = #tags > 0 and table.concat(tags, ", ") or "No tags available",
         relationships = relationships or {},
@@ -462,6 +478,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         fandoms = fandoms or {},
         published = publishedDate,
         updated = updatedDate,
+        wordcount = wordcount,
         chapters = chapters,
         language = language,
         epub_link = epub_link or "No EPUB link available",
