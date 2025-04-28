@@ -636,8 +636,8 @@ function CustomFilterMenu:UpdateFilterCrafter(filter)
             callback = function ()
 
                     local filters = Config:readSetting("saved_filters",{})
-
-                    table.insert(filters, {title = filter.title, parameters = filter.parameters})
+                    util.remove(filters, filter)
+                    table.insert(filters, 1, {title = filter.title, parameters = self.filter})
                     Config:saveSetting("saved_filters", filters)
                     UIManager:show(InfoMessage:new{
                         text = 'Filter "'.. filter.title  .. '" has been saved',
@@ -711,7 +711,7 @@ function CustomFilterMenu:SaveFilters()
                     end
 
                     local newFilter  = {title = value, parameters = self.filter}
-                    table.insert(filters, newFilter)
+                    table.insert(filters, 1, newFilter)
                     Config:saveSetting("saved_filters", filters)
                     UIManager:show(InfoMessage:new{
                         text = 'Filter "'.. value  .. '" has been saved',
