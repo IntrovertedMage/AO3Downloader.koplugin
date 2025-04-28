@@ -49,6 +49,34 @@ function Fanfic:addToMainMenu(menu_items)
     end
 end
 
+function serializeTable(val, name, skipnewlines, depth)
+    skipnewlines = skipnewlines or false
+    depth = depth or 0
+
+    local tmp = string.rep(" ", depth)
+
+    if name then tmp = tmp .. name .. " = " end
+
+    if type(val) == "table" then
+        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
+
+        for k, v in pairs(val) do
+            tmp =  tmp .. serializeTable(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
+        end
+
+        tmp = tmp .. string.rep(" ", depth) .. "}"
+    elseif type(val) == "number" then
+        tmp = tmp .. tostring(val)
+    elseif type(val) == "string" then
+        tmp = tmp .. string.format("%q", val)
+    elseif type(val) == "boolean" then
+        tmp = tmp .. (val and "true" or "false")
+    else
+        tmp = tmp .. "\"[inserializeable datatype:" .. type(val) .. "]\""
+    end
+
+    return tmp
+end
 
 
 function Fanfic:DownloadFanfic(id, parentMenu)
@@ -96,8 +124,8 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         path = path,
         title = (metadata.title or T("Fanfic #%1", id)),
         author = metadata.author or "Unknown",
-        date = metadata.date or "Unknown",
         chapters = metadata.chapters or "Unknown",
+        chapter_data = metadata.chapterData,
         summary = metadata.summary or "No summary available",
         fandoms = metadata.fandoms or {},
         tags = metadata.tags or {},
@@ -113,9 +141,13 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         category = metadata.category or "Unknown",
         iswip = metadata.iswip or "Unknown",
         updated = metadata.updated or "Unknown",
-        published = metadata.published or "Unknown"
+        published = metadata.published or "Unknown",
+        wordcount = metadata.wordcount or "Unknown",
     }
+    logger.dbg("chapter data:" .. serializeTable(fanfic.chapter_data))
     DownloadedFanfics.add(fanfic)
+
+
 
     -- Show confirmation dialog
     UIManager:show(ConfirmBox:new{
@@ -195,6 +227,7 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.iswip = metadata.iswip or fanfic.iswip
     fanfic.updated = metadata.updated or fanfic.updated
     fanfic.published = metadata.published or fanfic.published
+    fanfic.wordcount = metadata.wordcount or fanfic.wordcount
 
     DownloadedFanfics.update(fanfic)
 
