@@ -760,10 +760,6 @@ function CustomFilterMenu:WorkTagsSubmenu()
         },
         {
             text_func = function ()
-                if not self.filter.warnings then
-                    return "Warnings: Any"
-                end
-
                 local key_to_warnings = {
                     ["14"] = "Creator Choose Not To Use Archive Warnings",
                     ["17"] = "Graphic Depictions Of Violence",
@@ -773,13 +769,18 @@ function CustomFilterMenu:WorkTagsSubmenu()
                     ["20"] = "Underage Sex",
                 }
                 local warningStrings = {}
-                for __, warning in pairs(self.filter.warnings) do
-                    table.insert(warningStrings, key_to_warnings[warning])
+                if self.filter.warnings then
+                    for __, warning in pairs(self.filter.warnings) do
+                        table.insert(warningStrings, key_to_warnings[warning] or "")
+                    end
                 end
-                for __, warning in pairs(self.filter.exclude_warnings) do
-                    table.insert(warningStrings, "-" .. key_to_warnings[warning])
+
+                if self.filter.exclude_warnings then
+                    for __, warning in pairs(self.filter.exclude_warnings) do
+                        table.insert(warningStrings, ("-" .. key_to_warnings[warning]) or "")
+                    end
                 end
-                return "Warnings: " .. (self.filter.warnings and table.concat(warningStrings, ", ") or "Any")
+                return "Warnings: " .. ((#warningStrings > 0) and table.concat(warningStrings, ", ") or "Any")
             end,
 
             callback = function ()
@@ -788,10 +789,6 @@ function CustomFilterMenu:WorkTagsSubmenu()
         },
         {
             text_func = function ()
-                if not self.filter.categories then
-                    return "Catagories: Any"
-                end
-
                 local key_to_catagory = {
                     ["116"] = "F/F",
                     ["22"] = "F/M",
@@ -803,14 +800,19 @@ function CustomFilterMenu:WorkTagsSubmenu()
 
                 local catagoryStrings = {}
 
-                for __, catagory in pairs(self.filter.categories) do
-                    table.insert(catagoryStrings, key_to_catagory[catagory])
+                if self.filter.categories then
+                    for __, catagory in pairs(self.filter.categories) do
+                        table.insert(catagoryStrings, key_to_catagory[catagory])
+                    end
                 end
 
-                for __, catagory in pairs(self.filter.exclude_categories) do
-                    table.insert(catagoryStrings, "-" .. key_to_catagory[catagory])
+                if self.filter.exclude_categories then
+                    for __, catagory in pairs(self.filter.exclude_categories) do
+                        table.insert(catagoryStrings, "-" .. key_to_catagory[catagory])
+                    end
                 end
-                return "Catagories: " .. (self.filter.categories and table.concat(catagoryStrings, ", ") or "Any")
+                logger.dbg(catagoryStrings)
+                return "Catagories: " .. ((#catagoryStrings > 0) and table.concat(catagoryStrings, ", ") or "Any")
             end,
             callback = function ()
                 self:selectCatagories()
