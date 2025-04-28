@@ -1,4 +1,4 @@
-An unofficial KOReader plugin to download works from AO3, currently a work in progress
+An unofficial KOReader plugin to download works from AO3, currently a work in progress, incomplete and so will have many bugs, use at your own risk
 
 ## Screenshots
 ![Screenshot from 2025-04-14 17-52-39](https://github.com/user-attachments/assets/b87e13a7-ff8b-49ee-94df-650bfa9c5f43)
