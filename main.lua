@@ -299,7 +299,7 @@ function Fanfic:fetchFandomSearch(query)
 
 
     -- Fetch matching fandoms
-    local fandoms, error_message = Downloader:searchFandoms(query)
+    local fandoms, error_message = Downloader:searchForTag(query, "Fandom")
     if not fandoms then
         UIManager:show(InfoMessage:new{
             text = _("Error: ") .. (error_message or "Unknown error"),
