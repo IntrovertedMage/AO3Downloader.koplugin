@@ -111,6 +111,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                 ui:openFile(fanfic.path)
                                             end
                                             UIManager:close(parentMenu)
+                                            UIManager:close(dialog)
                                         end,
                                     },
                                     {
@@ -159,6 +160,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                 timeout = 1,
                                             })
                                         end,
+                                        UIManager:close(dialog)
                                     },
                                     {
                                         text = _("Delete"),
@@ -202,6 +204,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                 },
                                             }
                                             UIManager:show(confirmDialog)
+                                            UIManager:close(dialog)
                                         end,
                                     },
                                 },
