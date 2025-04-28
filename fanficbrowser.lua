@@ -88,9 +88,9 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                     text = _("Open"),
                                     callback = function()
                                         if UIManager.document then
-                                            UIManager:switchDocument(downloadedFanfic.path)
+                                            self.ui:switchDocument(downloadedFanfic.path)
                                         else
-                                            UIManager:openFile(downloadedFanfic.path)
+                                            self.ui:openFile(downloadedFanfic.path)
                                         end
                                         UIManager:close(self.browse_window)
 
@@ -169,6 +169,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 end
 
 function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback)
+    self.ui = ui
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
 
     local BrowseWindow = KeyValuePage:extend{

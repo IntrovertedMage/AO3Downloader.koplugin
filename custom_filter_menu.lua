@@ -733,10 +733,20 @@ function CustomFilterMenu:WorkTagsSubmenu()
     local menu_items = {
         {
             text_func = function ()
-                local included = self.filter.fandom_names and table.concat(self.filter.fandom_names, ", ") or ""
-                local excluded = self.filter.exclude_fandom_names and table.concat(self.filter.exclude_fandom_names, ", ", function(tag) return "-" .. tag end) or ""
-                local combined = included .. (included ~= "" and excluded ~= "" and ", " or "") .. excluded
-                return "Fandoms: " .. (combined ~= "" and combined or "Any")
+                local fandomStrings = {}
+
+                if self.filter.fandom_names then
+                    for __, fandom in pairs(self.filter.fandom_names) do
+                        table.insert(fandomStrings, fandom)
+                    end
+                end
+
+                if self.filter.exclude_fandom_names then
+                    for __, fandom in pairs(self.filter.exclude_fandom_names) do
+                        table.insert(fandomStrings, "-" .. fandom)
+                    end
+                end
+                return "Fandoms: " .. ((#fandomStrings > 0) and table.concat(fandomStrings, ", ") or "Any")
             end,
             callback = function ()
                 self:selectedFandoms()
@@ -1389,7 +1399,7 @@ function CustomFilterMenu:executeSearch()
 
         -- Show the results in the FanficBrowser
         FanficBrowser:show(
-            self.menuWidget.ui,
+            self.fanfic.ui,
             self.menuWidget,
             ficResults,
             fetchNextPage,
