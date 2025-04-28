@@ -820,10 +820,21 @@ function CustomFilterMenu:WorkTagsSubmenu()
         },
         {
             text_func = function ()
-                local included = self.filter.characters and table.concat(self.filter.characters, ", ") or ""
-                local excluded = self.filter.exclude_characters and table.concat(self.filter.exclude_characters, ", ", function(tag) return "-" .. tag end) or ""
-                local combined = included .. (included ~= "" and excluded ~= "" and ", " or "") .. excluded
-                return "Characters: " .. (combined ~= "" and combined or "Any")
+                local characterStrings = {}
+
+                if self.filter.characters then
+                    for __, character in pairs(self.filter.characters) do
+                        table.insert(characterStrings, character)
+                    end
+                end
+
+                if self.filter.exclude_characters then
+                    for __, character in pairs(self.filter.exclude_characters) do
+                        table.insert(characterStrings, "-" .. character)
+                    end
+                end
+                logger.dbg(characterStrings)
+                return "Characters: " .. ((#characterStrings > 0) and table.concat(characterStrings, ", ") or "Any")
             end,
             callback = function ()
                 self:selectCharacters()
@@ -831,10 +842,20 @@ function CustomFilterMenu:WorkTagsSubmenu()
         },
         {
             text_func = function ()
-                local included = self.filter.relationships and table.concat(self.filter.relationships, ", ") or ""
-                local excluded = self.filter.exclude_relationships and table.concat(self.filter.exclude_relationships, ", ", function(tag) return "-" .. tag end) or ""
-                local combined = included .. (included ~= "" and excluded ~= "" and ", " or "") .. excluded
-                return "Relationships: " .. (combined ~= "" and combined or "Any")
+                local relationshipStrings = {}
+
+                if self.filter.relationships then
+                    for __, relationship in pairs(self.filter.relationships) do
+                        table.insert(relationshipStrings, relationship)
+                    end
+                end
+
+                if self.filter.exclude_relationships then
+                    for __, relationship in pairs(self.filter.exclude_relationships) do
+                        table.insert(relationshipStrings, "-" .. relationship)
+                    end
+                end
+                return "Relationships: " .. ((#relationshipStrings > 0) and table.concat(relationshipStrings, ", ") or "Any")
             end,
             callback = function ()
                 self:selectRelationships()
@@ -842,10 +863,20 @@ function CustomFilterMenu:WorkTagsSubmenu()
         },
         {
             text_func = function ()
-                local included = self.filter.additional_tags and table.concat(self.filter.additional_tags, ", ") or ""
-                local excluded = self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ", ", function(tag) return "-" .. tag end) or ""
-                local combined = included .. (included ~= "" and excluded ~= "" and ", " or "") .. excluded
-                return "Additional Tags: " .. (combined ~= "" and combined or "Any")
+                local freemformStrings = {}
+
+                if self.filter.additional_tags then
+                    for __, tag in pairs(self.filter.additional_tags) do
+                        table.insert(freemformStrings, tag)
+                    end
+                end
+
+                if self.filter.exclude_additional_tags then
+                    for __, tag in pairs(self.filter.additional_tags) do
+                        table.insert(freemformStrings, "-" .. tag)
+                    end
+                end
+                return "Additional Tags: " .. ((#freemformStrings > 0) and table.concat(freemformStrings, ", ") or "Any")
             end,
             callback = function ()
                 self:selectAdditionalTags()
