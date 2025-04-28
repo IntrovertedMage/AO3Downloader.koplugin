@@ -12,26 +12,31 @@ local function createConfig()
     }
 
     function config:init()
-        self.settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
-        if next(self.settings.data) == nil then
+        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        if next(settings.data) == nil then
             self.updated = true -- first run, force flush
         end
-        self.settings:readSetting("AO3_domain", self.default_settings.AO3_domain)
-        self.settings:readSetting("bookmarkedFandoms", self.defaultFandoms)
-        self:onFlushSettings()
+        settings:readSetting("AO3_domain", self.default_settings.AO3_domain)
+        settings:readSetting("bookmarkedFandoms", self.defaultFandoms)
+        self:onFlushSettings(settings)
+        settings:close()
     end
 
     function config:readSetting(key, default)
-        local setting = self.settings:readSetting(key, default)
+        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        local setting = settings:readSetting(key, default)
         self.updated = true
-        self:onFlushSettings()
+        self:onFlushSettings(settings)
+        settings:close()
         return setting
     end
 
     function config:saveSetting(key, default)
-        self.settings:saveSetting(key, default)
+        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        settings:saveSetting(key, default)
         self.updated = true
-        self:onFlushSettings()
+        self:onFlushSettings(settings)
+        settings:close()
     end
 
     function config:getFandoms()
@@ -48,9 +53,9 @@ local function createConfig()
     }
 
 
-    function config:onFlushSettings()
+    function config:onFlushSettings(settings)
         if self and self.updated then
-            self.settings:flush()
+            settings:flush()
             self.updated = nil
         end
     end
