@@ -17,11 +17,23 @@ local AO3Downloader = {}
 
 local cookies = {}
 
+local function saveCookiesToConfig()
+    Config:writeSetting("AO3_cookies", cookies)
+end
+
+local function loadCookiesFromConfig()
+    local savedCookies = Config:readSetting("AO3_cookies")
+    if savedCookies then
+        cookies = savedCookies
+    end
+end
+
 local function getAO3URL()
     return Config:readSetting("AO3_domain")
 end
 
 local function getCookies()
+    loadCookiesFromConfig() -- Ensure cookies are loaded from the config
     local cookieHeader = {}
     for key, value in pairs(cookies) do
         table.insert(cookieHeader, key .. "=" .. value)
@@ -37,6 +49,7 @@ local function setCookies(responseHeaders)
                 cookies[key] = value
             end
         end
+        saveCookiesToConfig() -- Save cookies to the config file
     end
 end
 
@@ -75,6 +88,7 @@ local function performHttpsRequest(request)
     socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
 
     -- Add cookies to the request headers
+    logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
     request.headers["Cookie"] = getCookies()
     for i = 0, max_retries do
@@ -380,7 +394,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         for __, option in pairs(chapterIDElements) do
             logger.dbg("chapter element:" ..  option:gettext())
             if option.attributes.value then
-                table.insert(chapterData, {id = option.attributes.value, name = option:getcontent()})
+                table.insert(chapterData, {id = option.attributes.value, #chapterData + 1,  name = option:getcontent()})
             end
         end
     end
