@@ -5,6 +5,7 @@ local TextViewer = require("ui/widget/textviewer")
 local util = require("util")
 local logger = require("logger")
 local DownloadedFanfics = require("downloaded_fanfics")
+local FanficReader = require("fanfic_reader")
 local _ = require("gettext")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
@@ -83,7 +84,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
 
         -- Define the action for selecting a fandom
         table.insert(menu_items, {
-            text = T(_("(%1) %2"), #fanfics, fandom),
+            text = T("(%1) %2", #fanfics, fandom),
             callback = function()
                 -- Create the submenu for the selected fandom
                 local submenu_items = {}
@@ -100,18 +101,61 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                     {
                                         text = _("Open"),
                                         callback = function()
+                                            logger.dbg("chapters data:" .. tostring(fanfic.chapter_data))
+
                                             -- Update the `last_accessed` field
                                             fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
                                             DownloadedFanfics.update(fanfic) -- Save the updated metadata
-
-                                            -- Open the fanfic file
-                                            if ui.document then
-                                                ui:switchDocument(fanfic.path)
+                                            if #fanfic.chapter_data == 0 then
+                                                ---@diagnostic disable-next-line: missing-fields
+                                                FanficReader:show({
+                                                    fanfic_path = fanfic.path,
+                                                    current_fanfic = fanfic,
+                                                })
+                                                UIManager:close(parentMenu)
+                                                UIManager:close(dialog)
                                             else
-                                                ui:openFile(fanfic.path)
+                                                local open_method
+                                                open_method = ButtonDialog:new {
+                                                    buttons = {
+                                                        {
+                                                            {
+                                                                text = "Open",
+                                                                callback = function ()
+                                                                    ---@diagnostic disable-next-line: missing-fields
+                                                                    FanficReader:show({
+                                                                        fanfic_path = fanfic.path,
+                                                                        current_fanfic = fanfic,
+                                                                    })
+                                                                    UIManager:close(parentMenu)
+                                                                    UIManager:close(dialog)
+                                                                    UIManager:close(open_method)
+
+                                                                end
+                                                            }
+                                                        },
+                                                        {
+                                                            {
+                                                                text = "Open at chapter",
+                                                                callback = function ()
+                                                                    ---@diagnostic disable-next-line: missing-fields
+                                                                    FanficReader:show({
+                                                                        fanfic_path = fanfic.path,
+                                                                        current_fanfic = fanfic,
+                                                                        chapter_opening_at = 1
+                                                                    })
+                                                                    UIManager:close(parentMenu)
+                                                                    UIManager:close(dialog)
+                                                                    UIManager:close(open_method)
+
+                                                                end
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                UIManager:show(open_method)
+
                                             end
-                                            UIManager:close(parentMenu)
-                                            UIManager:close(dialog)
                                         end,
                                     },
                                     {

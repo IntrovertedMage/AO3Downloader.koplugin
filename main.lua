@@ -23,6 +23,7 @@ local TextViewer = require("ui/widget/textviewer")
 local DownloadedFanfics = require("downloaded_fanfics")
 local FanficBrowser = require("fanficbrowser")
 local FanficMenu = require("fanfic_menu")
+local FanficReader = require("fanfic_reader")
 
 local Fanfic = WidgetContainer:extend{
     name = "Fanfic downloader",
@@ -32,6 +33,12 @@ local Fanfic = WidgetContainer:extend{
 function Fanfic:init()
     lfs.mkdir(Paths:getHomeDirectory())
     lfs.mkdir(Paths:getHomeDirectory().."/Downloads/")
+    if self.ui.name == "ReaderUI" then
+        FanficReader:initializeFromReaderUI(self.ui)
+    else
+        self.ui.menu:registerToMainMenu(self)
+    end
+
     self.ui.menu:registerToMainMenu(self)
     DownloadedFanfics.load() -- Load fanfic history
 end
@@ -210,6 +217,7 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.title = metadata.title or fanfic.title
     fanfic.date = metadata.date or fanfic.date
     fanfic.chapters = metadata.chapters or fanfic.chapters
+    fanfic.chapter_data = metadata.chapterData
     fanfic.author = metadata.author or fanfic.author
     fanfic.fandoms = metadata.fandoms or fanfic.fandoms
     fanfic.summary = metadata.summary or fanfic.summary
@@ -236,8 +244,6 @@ function Fanfic:UpdateFanfic(fanfic)
         text = T(_("Fanfic '%1' has been updated successfully."), fanfic.title),
     })
 end
-
-
 
 function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
     local NetworkMgr = require("ui/network/manager")
