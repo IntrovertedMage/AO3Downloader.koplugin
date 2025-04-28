@@ -210,6 +210,7 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.title = metadata.title or fanfic.title
     fanfic.date = metadata.date or fanfic.date
     fanfic.chapters = metadata.chapters or fanfic.chapters
+    fanfic.chapter_data = metadata.chapterData
     fanfic.author = metadata.author or fanfic.author
     fanfic.fandoms = metadata.fandoms or fanfic.fandoms
     fanfic.summary = metadata.summary or fanfic.summary
