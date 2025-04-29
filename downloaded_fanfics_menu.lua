@@ -284,4 +284,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
     parentMenu:GoDownInMenu("Downloaded Works by Fandom", menu_items)
 end
 
+function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic)
+end
+
 return DownloadedFanficsMenu
