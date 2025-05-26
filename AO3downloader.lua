@@ -1,7 +1,5 @@
 local htmlparser = require("htmlparser")
 htmlparser_looplimit = 1000000000
-local UIManager = require("ui/uimanager")
-local InfoMessage = require("ui/widget/infomessage")
 local logger = require("logger")
 local ssl = require("ssl")
 local https = require("ssl.https") -- Use luasec for HTTPS requests
@@ -53,20 +51,20 @@ local function setCookies(responseHeaders)
     end
 end
 
-local unescape_map  = {
+local unescape_map = {
     ["lt"] = "<",
     ["gt"] = ">",
     ["amp"] = "&",
     ["quot"] = '"',
-    ["apos"] = "'"
+    ["apos"] = "'",
 }
 
 local gsub = string.gsub
 local function unescape(str)
-    return gsub(str, '(&(#?)([%d%a]+);)', function(orig, n, s)
+    return gsub(str, "(&(#?)([%d%a]+);)", function(orig, n, s)
         if unescape_map[s] then
             return unescape_map[s]
-        elseif n == "#" then  -- unescape unicode
+        elseif n == "#" then -- unescape unicode
             local codepoint
             -- Determine if the code point is written as a decimal or hexadecimal number
             if string.sub(s, 1, 1) == "x" then
@@ -92,19 +90,22 @@ local function performHttpsRequest(request)
     request.headers = request.headers or {}
     request.headers["Cookie"] = getCookies()
     for i = 0, max_retries do
-        response, status, response_headers = socket.skip(1, https.request{
-            url = request.url,
-            method = request.method or "GET",
-            headers = request.headers,
-            sink = request.sink,
-            protocol = "tlsv1_3", -- Explicitly set the protocol
-            options = "all",
-        })
+        response, status, response_headers = socket.skip(
+            1,
+            https.request({
+                url = request.url,
+                method = request.method or "GET",
+                headers = request.headers,
+                sink = request.sink,
+                protocol = "tlsv1_3", -- Explicitly set the protocol
+                options = "all",
+            })
+        )
         -- Parse and store cookies from the response
         if response_headers then
             setCookies(response_headers)
         end
-        logger.dbg("response:"..response)
+        logger.dbg("response:" .. response)
 
         if not (response == 200) and i == max_retries then
             logger.dbg("Request failed Status:", status)
@@ -114,7 +115,6 @@ local function performHttpsRequest(request)
             socketutil:reset_timeout()
             return response, status -- Exit if the request succeeds
         end
-
     end
 
     return nil, "Failed to connect using available protocols"
@@ -138,7 +138,7 @@ function AO3Downloader:parseSearchResults(root)
         -- Match a number at the beginning of the string, ignoring leading spaces
         local totalWorks = resultsText:match("^%s*([%d,]+) Found")
         if totalWorks then
-            totalWorks = tonumber(totalWorks:gsub(",",""), 10) -- Remove commas and convert to a number
+            totalWorks = tonumber(totalWorks:gsub(",", ""), 10) -- Remove commas and convert to a number
             works["total"] = totalWorks
         end
     end
@@ -154,7 +154,7 @@ function AO3Downloader:parseSearchResults(root)
                 totalWorks = resultsText:match("^%s*([%d,]+)%s*Works")
             end
             if totalWorks then
-                totalWorks = totalWorks:gsub(",","") -- Remove commas and convert to a number
+                totalWorks = totalWorks:gsub(",", "") -- Remove commas and convert to a number
                 works["total"] = tonumber(totalWorks)
             end
         end
@@ -250,27 +250,34 @@ function AO3Downloader:parseSearchResults(root)
             end
 
             -- Extract additional metadata
-            local date = dateElement and parseToCodepoints(dateElement:getcontent()) or "Unknown date"
-            local language = languageElement and parseToCodepoints(languageElement:getcontent()) or "Unknown language"
-            local words = wordsElement and parseToCodepoints(wordsElement:getcontent()) or "Unknown word count"
-            local chapters = chaptersElement and parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", "")) or "Unknown chapters"
+            local date = dateElement and parseToCodepoints(dateElement:getcontent()) or "N/A"
+            local language = languageElement and parseToCodepoints(languageElement:getcontent()) or "N/A"
+            local words = wordsElement and parseToCodepoints(wordsElement:getcontent()) or "N/A"
+            local chapters = chaptersElement and parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
+                or "N/A"
             local hits = hitsElement and parseToCodepoints(hitsElement:getcontent():gsub("<[^>]+>", "")) or "0"
-            local comments = commentsElement and parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", "")) or "0"
+            local comments = commentsElement and parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", ""))
+                or "0"
             local kudos = kudosElement and parseToCodepoints(kudosElement:getcontent():gsub("<[^>]+>", "")) or "0"
-            local bookmarks = bookmarksElement and parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", "")) or "0"
-            local rating = ratingElement and ratingElement.attributes["title"]
-            local category = categoryElement and categoryElement.attributes["title"]
-            local iswip = iswipElement and iswipElement.attributes["title"]
-
+            local bookmarks = bookmarksElement and parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", ""))
+                or "0"
+            local rating = ratingElement and ratingElement.attributes["title"] or "N/A"
+            local category = categoryElement and categoryElement.attributes["title"] or "N/A"
+            local iswip = iswipElement and iswipElement.attributes["title"] or "N/A"
+            local author = authorElement and parseToCodepoints(authorElement:getcontent()) or "N/A"
+            local tags = #tags > 0 and table.concat(tags, ", ") or "N/A"
 
             -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
-            local summary = summaryElement and parseToCodepoints(
-                summaryElement:getcontent()
-                    :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                    :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                    :gsub("<[^>]+>", "") -- Remove other HTML tags
-                    :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-            ) or "No summary available"
+            local summary = summaryElement
+                    and parseToCodepoints(
+                        summaryElement
+                            :getcontent()
+                            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                            :gsub("<[^>]+>", "") -- Remove other HTML tags
+                            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+                    )
+                or "No summary available"
 
             -- Remove leading and trailing whitespace from the title
             local title = parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"))
@@ -279,13 +286,13 @@ function AO3Downloader:parseSearchResults(root)
             local work = {
                 id = id,
                 title = title,
-                rating = rating or "Unknown",
-                category = category or "Unknown",
+                rating = rating,
+                category = category,
                 iswip = iswip,
                 link = getAO3URL() .. href,
-                author = authorElement and parseToCodepoints(authorElement:getcontent()) or "Unknown",
+                author = author,
                 summary = summary,
-                tags = #tags > 0 and table.concat(tags, ", ") or "No tags available",
+                tags = tags,
                 relationships = relationships or {},
                 characters = characters or {},
                 warnings = warnings or {},
@@ -293,7 +300,7 @@ function AO3Downloader:parseSearchResults(root)
                 date = date,
                 language = language,
                 words = words,
-                chapters = chapters, -- Cleaned chapters value
+                chapters = chapters,
                 hits = hits,
                 comments = comments,
                 kudos = kudos,
@@ -327,7 +334,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         ["Accept-Language"] = "en-US,en;q=0.5",
         ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
+        ["DNT"] = "1",
     }
 
     logger.dbg("Fetching metadata for work ID:", work_id)
@@ -378,25 +385,38 @@ function AO3Downloader:getWorkMetadata(work_id)
     local chapterIDElements = root:select("#chapter_index > li > form > p > select > option")
 
     -- Extract metadata values
-    local title = titleElement and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1")) or "Unknown title" -- Trim whitespace
+    local title = titleElement and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"))
+        or "Unknown title" -- Trim whitespace
     local author = authorElement and parseToCodepoints(authorElement:getcontent()) or "Unknown author"
-    local summary = summaryElement and parseToCodepoints(
-        summaryElement:getcontent()
-            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-            :gsub("<[^>]+>", "") -- Remove other HTML tags
-            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-    ) or "No summary available"
-
+    local summary = summaryElement
+            and parseToCodepoints(
+                summaryElement
+                    :getcontent()
+                    :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                    :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                    :gsub("<[^>]+>", "") -- Remove other HTML tags
+                    :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+            )
+        or "No summary available"
 
     local chapterData = {}
     if chapterIDElements then
         for __, option in pairs(chapterIDElements) do
-            logger.dbg("chapter element:" ..  option:gettext())
+            logger.dbg("chapter element:" .. option:gettext())
             if option.attributes.value then
-                table.insert(chapterData, {id = option.attributes.value, #chapterData + 1,  name = option:getcontent()})
+                table.insert(
+                    chapterData,
+                    { id = option.attributes.value, #chapterData + 1, name = option:getcontent() }
+                )
             end
         end
+    end
+
+    if #chapterData == 0 then
+        table.insert(
+            chapterData,
+            { id = work_id, #chapterData + 1, name = title }
+        )
     end
 
     local tags = {}
@@ -452,7 +472,8 @@ function AO3Downloader:getWorkMetadata(work_id)
 
     local publishedDate = publishedElement and parseToCodepoints(publishedElement:getcontent()) or "Unknown date"
     local updatedDate = updatedElement and parseToCodepoints(updatedElement:getcontent()) or "Unknown date"
-    local chapters = chaptersElement and parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", "")) or "Unknown chapters"
+    local chapters = chaptersElement and parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
+        or "Unknown chapters"
     local language = languageElement and parseToCodepoints(languageElement:getcontent()) or "Unknown language"
 
     -- Extract EPUB link
@@ -469,7 +490,7 @@ function AO3Downloader:getWorkMetadata(work_id)
     local kudos = kudosElement and parseToCodepoints(kudosElement:getcontent():gsub("<[^>]+>", "")) or "0"
     local comments = commentsElement and parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", "")) or "0"
     local bookmarks = bookmarksElement and parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", "")) or "0"
-    local wordcount = wordCountElement and wordCountElement:getcontent():gsub(",","") or "unknown"
+    local wordcount = wordCountElement and wordCountElement:getcontent():gsub(",", "") or "unknown"
 
     local iswip = iswipElement and iswipElement:getcontent():gsub(":", "") -- Remove colon
     if iswip == "Completed" then
@@ -495,15 +516,14 @@ function AO3Downloader:getWorkMetadata(work_id)
         wordcount = wordcount,
         chapters = chapters,
         language = language,
-        epub_link = epub_link or "No EPUB link available",
+        epub_link = epub_link or nil,
         hits = hits,
         kudos = kudos,
         comments = comments,
         bookmarks = bookmarks,
         rating = ratingElement and ratingElement:getcontent(),
         category = categoryElement and categoryElement:getcontent(),
-        iswip = iswip
-
+        iswip = iswip,
     }
 end
 
@@ -619,7 +639,13 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
         :gsub("%)", "%%29")
 
     -- Construct the URL
-    local url = string.format("%s/tags/%s/works?page=%d&work_search[sort_column]=%s", getAO3URL(), encoded_tag_name, page, sort_column)
+    local url = string.format(
+        "%s/tags/%s/works?page=%d&work_search[sort_column]=%s",
+        getAO3URL(),
+        encoded_tag_name,
+        page,
+        sort_column
+    )
 
     logger.dbg("Starting search request to:", url)
 
@@ -662,7 +688,7 @@ function AO3Downloader:searchForTag(query, type)
         return nil, "Search query cannot be empty"
     end
 
-    if not type  then
+    if not type then
         type = "Fandom"
     end
 
