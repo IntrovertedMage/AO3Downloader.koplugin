@@ -80,9 +80,8 @@ local function unescape(str)
 end
 -- Helper function to handle retries for HTTPS requests
 local function performHttpsRequest(request)
-    local max_retries = 5
+    local max_retries = 3
     local response, status, response_headers
-    local retry_count = 0
 
     socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
 
@@ -90,8 +89,7 @@ local function performHttpsRequest(request)
     logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
     request.headers["Cookie"] = getCookies()
-
-    while retry_count <= max_retries do
+    for i = 0, max_retries do
         response, status, response_headers = socket.skip(
             1,
             https.request({
@@ -107,22 +105,19 @@ local function performHttpsRequest(request)
         if response_headers then
             setCookies(response_headers)
         end
-        logger.dbg("response:" .. tostring(response))
+        logger.dbg("response:" .. response)
 
-        if response == 200 then
+        if not (response == 200) and i == max_retries then
+            logger.dbg("Request failed Status:", status)
+            socketutil:reset_timeout()
+            return nil
+        elseif response == 200 then
             socketutil:reset_timeout()
             return response, status -- Exit if the request succeeds
-        else
-            retry_count = retry_count + 1
-            logger.dbg("Retrying... Attempt " .. retry_count .. " of " .. max_retries)
-        end
-
-        if retry_count > max_retries then
-            logger.dbg("Request failed after retries. Status:", status)
-            socketutil:reset_timeout()
-            return nil, "Failed to connect using available protocols"
         end
     end
+
+    return nil, "Failed to connect using available protocols"
 end
 
 local function parseToCodepoints(str)
@@ -331,7 +326,7 @@ local function urlEncode(str)
 end
 
 function AO3Downloader:getWorkMetadata(work_id)
-    local url = string.format("%s/works/%s", getAO3URL(), work_id)
+    local url = string.format("%s/works/%s?view_adult=true", getAO3URL(), work_id)
     local response_body = {}
 
     local headers = {
@@ -350,6 +345,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         headers = headers,
         sink = ltn12.sink.table(response_body),
     }
+
     local response, status = performHttpsRequest(request)
 
     if not response then
@@ -359,33 +355,6 @@ function AO3Downloader:getWorkMetadata(work_id)
 
     local body = table.concat(response_body)
     local root = htmlparser.parse(body)
-
-    local caution_content = nil
-    -- view_adult doesn't actually always bypass the adult check on the base url, so we need to use the chapter url.
-    local caution = root:select("p.caution")
-    if #caution > 0 then
-        caution_content = caution[1]:getcontent()
-    end
-
-    if caution_content and string.find(caution_content, "This work could have adult content") then
-        -- Finds the link with 'view_adult' in the url. This is the working chapter link.
-        local adult = root:select(".actions > li > a[href*='view_adult']")[1].attributes.href
-        local adult_url = string.format("%s%s", getAO3URL(), adult)
-        -- This should probably be refactored later to reduce duplication.
-        request = {
-            url = adult_url,
-            method = "GET",
-            headers = headers,
-            sink = ltn12.sink.table(response_body),
-        }
-        response, status = performHttpsRequest(request)
-        if not response then
-            logger.dbg("Failed to fetch work metadata. Status:", status or "unknown error")
-            return nil, "Failed to fetch work metadata"
-        end
-        body = table.concat(response_body)
-        root = htmlparser.parse(body)
-    end
 
     -- Extract metadata
     local titleElement = root:select(".title")[1]
@@ -443,7 +412,6 @@ function AO3Downloader:getWorkMetadata(work_id)
         end
     end
 
-    -- If no chapters makes a single chapter with the works name
     if #chapterData == 0 then
         table.insert(
             chapterData,
