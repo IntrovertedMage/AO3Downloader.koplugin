@@ -1014,7 +1014,6 @@ function CustomFilterMenu:WorkOrderSubmenu()
         {
             text_func = function ()
                 local key_to_sort = {
-                    ["_score"] = "Best Match",
                     ["authors_to_sort_on"] = "Author",
                     ["title_to_sort_on"] = "Title",
                     ["created_at"] = "Date Posted",
@@ -1286,10 +1285,6 @@ end
 function CustomFilterMenu:selectSortBy()
     local title = "Select value to sort by"
     local options = {
-        {
-            text = "Best Match",
-            value = "_score",
-        },
         {
             text = "Author",
             value = "authors_to_sort_on",
