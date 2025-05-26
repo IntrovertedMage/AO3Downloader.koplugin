@@ -92,7 +92,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                     for __, fanfic in ipairs(fanfics) do
                         local fanfic_read = true
 
-                        if #fanfic.chapter_data > 0 then
+                        if fanfic.chapter_data and #fanfic.chapter_data > 0 then
                             for index, chapter in pairs(fanfic.chapter_data) do
                                 if not chapter.read then
                                     fanfic_read = false
