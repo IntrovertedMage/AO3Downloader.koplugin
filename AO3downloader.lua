@@ -80,8 +80,9 @@ local function unescape(str)
 end
 -- Helper function to handle retries for HTTPS requests
 local function performHttpsRequest(request)
-    local max_retries = 3
+    local max_retries = 5
     local response, status, response_headers
+    local retry_count = 0
 
     socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
 
@@ -89,7 +90,8 @@ local function performHttpsRequest(request)
     logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
     request.headers["Cookie"] = getCookies()
-    for i = 0, max_retries do
+
+    while retry_count <= max_retries do
         response, status, response_headers = socket.skip(
             1,
             https.request({
@@ -105,19 +107,22 @@ local function performHttpsRequest(request)
         if response_headers then
             setCookies(response_headers)
         end
-        logger.dbg("response:" .. response)
+        logger.dbg("response:" .. tostring(response))
 
-        if not (response == 200) and i == max_retries then
-            logger.dbg("Request failed Status:", status)
-            socketutil:reset_timeout()
-            return nil
-        elseif response == 200 then
+        if response == 200 then
             socketutil:reset_timeout()
             return response, status -- Exit if the request succeeds
+        else
+            retry_count = retry_count + 1
+            logger.dbg("Retrying... Attempt " .. retry_count .. " of " .. max_retries)
+        end
+
+        if retry_count > max_retries then
+            logger.dbg("Request failed after retries. Status:", status)
+            socketutil:reset_timeout()
+            return nil, "Failed to connect using available protocols"
         end
     end
-
-    return nil, "Failed to connect using available protocols"
 end
 
 local function parseToCodepoints(str)
@@ -326,7 +331,7 @@ local function urlEncode(str)
 end
 
 function AO3Downloader:getWorkMetadata(work_id)
-    local url = string.format("%s/works/%s?view_adult=true", getAO3URL(), work_id)
+    local url = string.format("%s/works/%s", getAO3URL(), work_id)
     local response_body = {}
 
     local headers = {
@@ -345,7 +350,6 @@ function AO3Downloader:getWorkMetadata(work_id)
         headers = headers,
         sink = ltn12.sink.table(response_body),
     }
-
     local response, status = performHttpsRequest(request)
 
     if not response then
