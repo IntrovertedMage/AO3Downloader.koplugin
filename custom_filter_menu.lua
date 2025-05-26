@@ -484,6 +484,12 @@ function CustomFilterMenu:show(menuWidget, fanfic)
                                         self.filter = filter.parameters
                                         local filters = Config:readSetting("saved_filters")
                                         util.remove(filters, filter)
+                                        for idx, c_filter in pairs(filters) do
+                                            if c_filter.title == filter.title then
+                                                table.remove(filters, idx)
+                                                break
+                                            end
+                                        end
                                         Config:saveSetting("saved_filters", filters)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems()
@@ -637,6 +643,14 @@ function CustomFilterMenu:UpdateFilterCrafter(filter)
 
                     local filters = Config:readSetting("saved_filters",{})
                     util.remove(filters, filter)
+
+                    for idx, c_filter in pairs(filters) do
+                        if c_filter.title == filter.title then
+                            table.remove(filters, idx)
+                            break
+                        end
+                    end
+
                     table.insert(filters, 1, {title = filter.title, parameters = self.filter})
                     Config:saveSetting("saved_filters", filters)
                     UIManager:show(InfoMessage:new{
