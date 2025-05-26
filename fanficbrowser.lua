@@ -3,6 +3,7 @@ local KeyValuePage = require("ui/widget/keyvaluepage")
 local UIManager = require("ui/uimanager")
 local DownloadedFanfics = require("downloaded_fanfics")
 local InfoMessage = require("ui/widget/infomessage")
+local FanficReader = require("fanfic_reader")
 local _ = require("gettext")
 local util = require("util")
 local FFIUtil = require("ffi/util")
@@ -87,11 +88,10 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                 {
                                     text = _("Open"),
                                     callback = function()
-                                        if UIManager.document then
-                                            self.ui:switchDocument(downloadedFanfic.path)
-                                        else
-                                            self.ui:openFile(downloadedFanfic.path)
-                                        end
+                                        FanficReader:show({
+                                            fanfic_path = downloadedFanfic.path,
+                                            current_fanfic = downloadedFanfic
+                                        })
                                         UIManager:close(self.browse_window)
 
                                     end,

@@ -8,18 +8,9 @@ local InputDialog = require("ui/widget/inputdialog")
 local Downloader = require("AO3downloader")
 local InfoMessage = require("ui/widget/infomessage")
 local Paths = require("FanficPaths")
-local socket = require("socket")
-local ReaderUI = require("apps/reader/readerui")
-local KeyValuePage = require("ui/widget/keyvaluepage")
 local ConfirmBox = require("ui/widget/confirmbox")
 local BD = require("ui/bidi")
-local Menu = require("ui/widget/menu")
-local Config = require("config")
-local json = require("dkjson")
-local util = require("util")
 local lfs = require("libs/libkoreader-lfs")
-local ButtonDialog = require("ui/widget/buttondialog")
-local TextViewer = require("ui/widget/textviewer")
 local DownloadedFanfics = require("downloaded_fanfics")
 local FanficBrowser = require("fanficbrowser")
 local FanficMenu = require("fanfic_menu")
@@ -56,36 +47,6 @@ function Fanfic:addToMainMenu(menu_items)
     end
 end
 
-function serializeTable(val, name, skipnewlines, depth)
-    skipnewlines = skipnewlines or false
-    depth = depth or 0
-
-    local tmp = string.rep(" ", depth)
-
-    if name then tmp = tmp .. name .. " = " end
-
-    if type(val) == "table" then
-        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
-
-        for k, v in pairs(val) do
-            tmp =  tmp .. serializeTable(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
-        end
-
-        tmp = tmp .. string.rep(" ", depth) .. "}"
-    elseif type(val) == "number" then
-        tmp = tmp .. tostring(val)
-    elseif type(val) == "string" then
-        tmp = tmp .. string.format("%q", val)
-    elseif type(val) == "boolean" then
-        tmp = tmp .. (val and "true" or "false")
-    else
-        tmp = tmp .. "\"[inserializeable datatype:" .. type(val) .. "]\""
-    end
-
-    return tmp
-end
-
-
 function Fanfic:DownloadFanfic(id, parentMenu)
     local NetworkMgr = require("ui/network/manager")
 
@@ -100,7 +61,7 @@ function Fanfic:DownloadFanfic(id, parentMenu)
     local metadata, error_message = Downloader:getWorkMetadata(id)
     if not metadata then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to fetch work metadata: ") .. (error_message or "Unknown error")
+            text = _("Error: failed to fetch work metadata: ") .. (error_message or "Unknown erro:r")
         })
         return
     end
@@ -114,7 +75,7 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         return
     end
 
-    os.execute("sleep " .. math.random(2, 5)) -- Random delay between 2-5 seconds
+    os.execute("sleep " .. math.random(1, 3))
 
     -- Download the EPUB file
     local succeeded, path = Downloader:downloadEpub(url, tostring(id))
@@ -129,29 +90,33 @@ function Fanfic:DownloadFanfic(id, parentMenu)
     local fanfic = {
         id = id,
         path = path,
-        title = (metadata.title or T("Fanfic #%1", id)),
-        author = metadata.author or "Unknown",
-        chapters = metadata.chapters or "Unknown",
+        title = metadata.title,
+        author = metadata.author,
+        chapters = metadata.chapters,
         chapter_data = metadata.chapterData,
-        summary = metadata.summary or "No summary available",
-        fandoms = metadata.fandoms or {},
-        tags = metadata.tags or {},
-        relationships = metadata.relationships or {},
-        characters = metadata.characters or {},
-        warnings = metadata.warnings or {},
-        hits = metadata.hits or "0",
-        kudos = metadata.kudos or "0",
-        bookmarks = metadata.bookmarks or "0",
-        comments = metadata.comments or "0",
+        summary = metadata.summary,
+        fandoms = metadata.fandoms,
+        tags = metadata.tags,
+        relationships = metadata.relationships,
+        characters = metadata.characters,
+        warnings = metadata.warnings,
+        hits = metadata.hits,
+        kudos = metadata.kudos,
+        bookmarks = metadata.bookmarks,
+        comments = metadata.comments,
         last_accessed = os.date("%Y-%m-%d %H:%M:%S"), -- Add last_accessed field
-        rating = metadata.rating or "Unknown",
-        category = metadata.category or "Unknown",
-        iswip = metadata.iswip or "Unknown",
-        updated = metadata.updated or "Unknown",
-        published = metadata.published or "Unknown",
-        wordcount = metadata.wordcount or "Unknown",
+        rating = metadata.rating,
+        category = metadata.category,
+        iswip = metadata.iswip,
+        updated = metadata.updated ,
+        published = metadata.published,
+        wordcount = metadata.wordcount,
     }
-    logger.dbg("chapter data:" .. serializeTable(fanfic.chapter_data))
+
+    for idx, __ in pairs(fanfic.chapter_data) do
+        fanfic.chapter_data[idx].read = false
+    end
+
     DownloadedFanfics.add(fanfic)
 
 
@@ -161,15 +126,16 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         text = T(_("File saved to:\n%1\nWould you like to read the downloaded book now?"), BD.filepath(path)),
         ok_text = _("Read now"),
         ok_callback = function()
-            if self.ui.document then
-                self.ui:switchDocument(path)
-            else
-                self.ui:openFile(path)
-            end
             if parentMenu then
-                parentMenu:onClose()
+                UIManager:close(parentMenu)
             end
-            self.menu:onClose()
+
+            UIManager:close(self.menu)
+            FanficReader:show({
+                fanfic_path = fanfic.path,
+                current_fanfic = fanfic,
+            })
+
         end,
     })
 end
@@ -217,7 +183,6 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.title = metadata.title or fanfic.title
     fanfic.date = metadata.date or fanfic.date
     fanfic.chapters = metadata.chapters or fanfic.chapters
-    fanfic.chapter_data = metadata.chapterData
     fanfic.author = metadata.author or fanfic.author
     fanfic.fandoms = metadata.fandoms or fanfic.fandoms
     fanfic.summary = metadata.summary or fanfic.summary
@@ -236,6 +201,14 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.updated = metadata.updated or fanfic.updated
     fanfic.published = metadata.published or fanfic.published
     fanfic.wordcount = metadata.wordcount or fanfic.wordcount
+
+    for idx, chapter in pairs(fanfic.chapter_data) do
+        if metadata.chapterData[idx] then
+            metadata.chapterData[idx].read = chapter.read or false
+        end
+    end
+
+    fanfic.chapter_data = metadata.chapterData
 
     DownloadedFanfics.update(fanfic)
 
@@ -269,7 +242,7 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
 
     if not ficResults then
         UIManager:show(InfoMessage:new{
-            text = _("Error: Failed to fetch fanfics for the selected fandom.")
+            text = _("Error: Failed to fetch fanfics for the selected tag.")
         })
         return false
     end
