@@ -129,7 +129,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                     -- Update the `last_accessed` field
                                                     fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
                                                     DownloadedFanfics.update(fanfic) -- Save the updated metadata
-                                                    if #fanfic.chapter_data == 0 then
+                                                    if (not fanfic.chapter_data) or #fanfic.chapter_data == 0 then
                                                         UIManager:close(parentMenu)
                                                         UIManager:close(dialog)
                                                         ---@diagnostic disable-next-line: missing-fields
