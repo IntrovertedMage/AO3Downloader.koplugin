@@ -326,7 +326,7 @@ local function urlEncode(str)
 end
 
 function AO3Downloader:getWorkMetadata(work_id)
-    local url = string.format("%s/works/%s?view_adult=true", getAO3URL(), work_id)
+    local url = string.format("%s/works/%s", getAO3URL(), work_id)
     local response_body = {}
 
     local headers = {
@@ -355,6 +355,32 @@ function AO3Downloader:getWorkMetadata(work_id)
 
     local body = table.concat(response_body)
     local root = htmlparser.parse(body)
+  local caution_content = nil
+    -- view_adult doesn't actually always bypass the adult check on the base url, so we need to use the chapter url.
+    local caution = root:select("p.caution")
+    if #caution > 0 then
+        caution_content = caution[1]:getcontent()
+    end
+
+    if caution_content and string.find(caution_content, "This work could have adult content") then
+        -- Finds the link with 'view_adult' in the url. This is the working chapter link.
+        local adult = root:select(".actions > li > a[href*='view_adult']")[1].attributes.href
+        local adult_url = string.format("%s%s", getAO3URL(), adult)
+        -- This should probably be refactored later to reduce duplication.
+        request = {
+            url = adult_url,
+            method = "GET",
+            headers = headers,
+            sink = ltn12.sink.table(response_body),
+        }
+        response, status = performHttpsRequest(request)
+        if not response then
+            logger.dbg("Failed to fetch work metadata. Status:", status or "unknown error")
+            return nil, "Failed to fetch work metadata"
+        end
+        body = table.concat(response_body)
+        root = htmlparser.parse(body)
+    end
 
     -- Extract metadata
     local titleElement = root:select(".title")[1]
