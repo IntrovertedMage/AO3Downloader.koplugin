@@ -344,11 +344,15 @@ function FanficMenu:onBrowseByTag(selectedTag)
 
     -- Define available sorting options
     local sorting_options = {
-        { text = _("Sort by Kudos"), value = "kudos_count" },
+        { text = _("Sort by Author"), value = "authors_to_sort_on" },
+        { text = _("Sort by Title"), value = "title_to_sort_on" },
+        { text = _("Sort by Date Posted"), value = "created_at" },
+        { text = _("Sort by Date Updated"), value = "revised_at" },
+        { text = _("Sort by Word Count"), value = "word_count" },
         { text = _("Sort by Hits"), value = "hits" },
+        { text = _("Sort by Kudos"), value = "kudos_count" },
         { text = _("Sort by Comments"), value = "comments_count" },
         { text = _("Sort by Bookmarks"), value = "bookmarks_count" },
-        { text = _("Sort by Date Updated"), value = "revised_at" },
     }
 
     -- Create a menu for sorting options

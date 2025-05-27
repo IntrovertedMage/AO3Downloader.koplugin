@@ -227,7 +227,7 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
 
     local success, ficResults, fetchNextPage
     if NetworkMgr:willRerunWhenOnline(function()
-            success, ficResults, fetchNextPage =  self:fetchFanficsByFandom(selectedFandom, sortBy)
+            success, ficResults, fetchNextPage =  self:fetchFanficsByTag(selectedFandom, sortBy)
         end) then
         return false
     end
@@ -296,96 +296,6 @@ function Fanfic:onShowFanficBrowser(parentMenu, ficResults, fetchNextPage)
         function(fanficId, parentMenu) self:DownloadFanfic(fanficId, parentMenu) end -- Download callback
     )
 end
-
-
-function Fanfic:fetchFandomSearch(query)
-    local NetworkMgr = require("ui/network/manager")
-    local success, works
-    if NetworkMgr:willRerunWhenOnline(function()
-                success, works  = self:fetchFandomSearch(query)
-            end) then
-        return success, works
-    end
-    if query == "" then
-        UIManager:show(InfoMessage:new{
-            text = _("Error: No search query entered."),
-        })
-        return
-    end
-
-
-    -- Fetch matching fandoms
-    local fandoms, error_message = Downloader:searchForTag(query, "Fandom")
-    if not fandoms then
-        UIManager:show(InfoMessage:new{
-            text = _("Error: ") .. (error_message or "Unknown error"),
-        })
-        return false
-    end
-
-    return true, fandoms
-end
-
-function Fanfic:onSearchFandoms()
-    -- Show an input dialog to enter the fandom search query
-    local searchDialog
-    searchDialog = InputDialog:new{
-        title = _("Search Fandoms"),
-        input = "",
-        input_type = "text",
-        buttons = {
-            {
-                {
-                    text = _("Close"),
-                    id = "close",
-                    callback = function()
-                        UIManager:close(searchDialog)
-                    end,
-                },
-                {
-                    text = _("Search"),
-                    is_enter_default = true,
-                    callback = function()
-                        local query = searchDialog:getInputText()
-                        if query == "" then
-                            UIManager:show(InfoMessage:new{
-                                text = _("Error: No search query entered."),
-                            })
-                            return
-                        end
-
-                        UIManager:close(searchDialog)
-
-                        -- Fetch matching fandoms
-                        local fandoms, error_message = Downloader:searchForTag(query)
-                        if not fandoms then
-                            UIManager:show(InfoMessage:new{
-                                text = _("Error: ") .. (error_message or "Unknown error"),
-                            })
-                            return
-                        end
-
-                        -- Show the matching fandoms in a menu
-                        local menu_items = {}
-                        for _, fandom in ipairs(fandoms) do
-                            table.insert(menu_items, {
-                                text = T("%1 (works: %2)", fandom.name, fandom.uses),
-                                callback = function()
-                                    self:onBrowseByFandom(fandom.name)
-                                end,
-                            })
-                        end
-                        self.fandomMenu:GoDownInMenu("Select a Fandom", menu_items)
-                    end,
-                },
-            }
-        },
-    }
-
-    UIManager:show(searchDialog)
-    searchDialog:onShowKeyboard()
-end
-
 
 function Fanfic:searchForTags(query, type)
     local tags, error_message = Downloader:searchForTag(query, type)
