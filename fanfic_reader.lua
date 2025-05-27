@@ -86,6 +86,9 @@ end
 
 
 function FanficReader:onFinishChapter(chapter_index)
+    if not self.current_fanfic.chapter_data then
+        return
+    end
     if self.current_fanfic.chapter_data[chapter_index].read then
         return
     end

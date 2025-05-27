@@ -113,8 +113,10 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         wordcount = metadata.wordcount,
     }
 
-    for idx, __ in pairs(fanfic.chapter_data) do
-        fanfic.chapter_data[idx].read = false
+    if fanfic.chapter_data then
+        for idx, __ in pairs(fanfic.chapter_data) do
+            fanfic.chapter_data[idx].read = false
+        end
     end
 
     DownloadedFanfics.add(fanfic)
@@ -202,9 +204,11 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.published = metadata.published or fanfic.published
     fanfic.wordcount = metadata.wordcount or fanfic.wordcount
 
-    for idx, chapter in pairs(fanfic.chapter_data) do
-        if metadata.chapterData[idx] then
-            metadata.chapterData[idx].read = chapter.read or false
+    if fanfic.chapter_data then
+        for idx, chapter in pairs(fanfic.chapter_data) do
+            if metadata.chapterData[idx] then
+                metadata.chapterData[idx].read = chapter.read or false
+            end
         end
     end
 

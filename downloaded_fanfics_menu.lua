@@ -124,7 +124,6 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                             {
                                                 text = _("Open"),
                                                 callback = function()
-                                                    logger.dbg("chapters data:" .. tostring(fanfic.chapter_data))
 
                                                     -- Update the `last_accessed` field
                                                     fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
@@ -342,6 +341,10 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
 end
 
 function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
+    if not fanfic.chapter_options then
+        return
+    end
+
     local chapter_options = {}
 
     for idx, chapter in pairs(fanfic.chapter_data) do

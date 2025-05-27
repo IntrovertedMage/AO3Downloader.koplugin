@@ -108,9 +108,11 @@ end
 function DownloadedFanfics.markChapterAsRead(fanficId, chapter_id)
     for i, fanfic in pairs(downloaded_fanfics) do
         if tostring(fanfic.id) == tostring(fanficId) then
-            downloaded_fanfics[i].chapter_data[chapter_id].read = true
-            DownloadedFanfics.save()
-            return downloaded_fanfics[i]
+            if downloaded_fanfics[i].chapter_data and downloaded_fanfics[i].chapter_data[chapter_id] then
+                downloaded_fanfics[i].chapter_data[chapter_id].read = true
+                DownloadedFanfics.save()
+                return downloaded_fanfics[i]
+            end
         end
     end
 end
