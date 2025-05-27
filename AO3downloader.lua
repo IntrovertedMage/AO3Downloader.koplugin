@@ -36,6 +36,7 @@ local function getCookies()
     for key, value in pairs(cookies) do
         table.insert(cookieHeader, key .. "=" .. value)
     end
+    table.insert(cookieHeader, "view_adult = true")
     return table.concat(cookieHeader, "; ")
 end
 
@@ -83,13 +84,13 @@ local function performHttpsRequest(request)
     local max_retries = 3
     local response, status, response_headers
 
-    socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
 
     -- Add cookies to the request headers
     logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
     request.headers["Cookie"] = getCookies()
     for i = 0, max_retries do
+        socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
         response, status, response_headers = socket.skip(
             1,
             https.request({
@@ -115,6 +116,9 @@ local function performHttpsRequest(request)
             socketutil:reset_timeout()
             return response, status -- Exit if the request succeeds
         end
+
+        -- Add a sleep to prevent rate limiting.
+        socket.sleep(1)
     end
 
     return nil, "Failed to connect using available protocols"
@@ -355,32 +359,6 @@ function AO3Downloader:getWorkMetadata(work_id)
 
     local body = table.concat(response_body)
     local root = htmlparser.parse(body)
-  local caution_content = nil
-    -- view_adult doesn't actually always bypass the adult check on the base url, so we need to use the chapter url.
-    local caution = root:select("p.caution")
-    if #caution > 0 then
-        caution_content = caution[1]:getcontent()
-    end
-
-    if caution_content and string.find(caution_content, "This work could have adult content") then
-        -- Finds the link with 'view_adult' in the url. This is the working chapter link.
-        local adult = root:select(".actions > li > a[href*='view_adult']")[1].attributes.href
-        local adult_url = string.format("%s%s", getAO3URL(), adult)
-        -- This should probably be refactored later to reduce duplication.
-        request = {
-            url = adult_url,
-            method = "GET",
-            headers = headers,
-            sink = ltn12.sink.table(response_body),
-        }
-        response, status = performHttpsRequest(request)
-        if not response then
-            logger.dbg("Failed to fetch work metadata. Status:", status or "unknown error")
-            return nil, "Failed to fetch work metadata"
-        end
-        body = table.concat(response_body)
-        root = htmlparser.parse(body)
-    end
 
     -- Extract metadata
     local titleElement = root:select(".title")[1]
@@ -439,10 +417,7 @@ function AO3Downloader:getWorkMetadata(work_id)
     end
 
     if #chapterData == 0 then
-        table.insert(
-            chapterData,
-            { id = work_id, #chapterData + 1, name = title }
-        )
+        table.insert(chapterData, { id = work_id, #chapterData + 1, name = title })
     end
 
     local tags = {}
