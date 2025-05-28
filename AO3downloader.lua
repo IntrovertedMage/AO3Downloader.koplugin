@@ -16,7 +16,7 @@ local AO3Downloader = {}
 local cookies = {}
 
 local function saveCookiesToConfig()
-    Config:writeSetting("AO3_cookies", cookies)
+    Config:saveSetting("AO3_cookies", cookies)
 end
 
 local function loadCookiesFromConfig()
@@ -30,20 +30,27 @@ local function getAO3URL()
     return Config:readSetting("AO3_domain")
 end
 
-local function getCookies()
+local function getCookies(custom_cookies)
     loadCookiesFromConfig() -- Ensure cookies are loaded from the config
     local cookieHeader = {}
     for key, value in pairs(cookies) do
         table.insert(cookieHeader, key .. "=" .. value)
     end
-    table.insert(cookieHeader, "view_adult = true")
+
+    if custom_cookies then
+        for key, value in pairs(custom_cookies) do
+            table.insert(cookieHeader, key .. "=" .. value)
+        end
+    end
+
     return table.concat(cookieHeader, "; ")
 end
 
 local function setCookies(responseHeaders)
     if responseHeaders["set-cookie"] then
-        for _, cookie in ipairs(responseHeaders["set-cookie"]) do
-            local key, value = cookie:match("([^=]+)=([^;]+)")
+        logger.dbg("cookies: " .. responseHeaders["set-cookie"])
+        for key, value  in string.gmatch(responseHeaders["set-cookie"], "([^=;%s]+)=([^;]*)") do
+            logger.dbg("cookie: ".. key .. "," .. value)
             if key and value then
                 cookies[key] = value
             end
@@ -88,12 +95,10 @@ local function performHttpsRequest(request)
     -- Add cookies to the request headers
     logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
-    request.headers["Cookie"] = getCookies()
+    request.headers["Cookie"] = getCookies(request.cookies)
     for i = 0, max_retries do
         socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
-        response, status, response_headers = socket.skip(
-            1,
-            https.request({
+        response, status, response_headers = https.request({
                 url = request.url,
                 method = request.method or "GET",
                 headers = request.headers,
@@ -101,18 +106,18 @@ local function performHttpsRequest(request)
                 protocol = "tlsv1_3", -- Explicitly set the protocol
                 options = "all",
             })
-        )
+
         -- Parse and store cookies from the response
         if response_headers then
             setCookies(response_headers)
         end
         logger.dbg("response:" .. response)
 
-        if not (response == 200) and i == max_retries then
+        if not (response == 1) and i == max_retries then
             logger.dbg("Request failed Status:", status)
             socketutil:reset_timeout()
             return nil
-        elseif response == 200 then
+        elseif response == 1 then
             socketutil:reset_timeout()
             return response, status -- Exit if the request succeeds
         end
@@ -348,6 +353,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         method = "GET",
         headers = headers,
         sink = ltn12.sink.table(response_body),
+        cookies = {["view_adult"] = "true"}
     }
 
     local response, status = performHttpsRequest(request)
@@ -406,7 +412,6 @@ function AO3Downloader:getWorkMetadata(work_id)
     local chapterData = {}
     if chapterIDElements then
         for __, option in pairs(chapterIDElements) do
-            logger.dbg("chapter element:" .. option:gettext())
             if option.attributes.value then
                 table.insert(
                     chapterData,
@@ -622,7 +627,6 @@ function AO3Downloader:searchFic(parameters, page)
     local root = htmlparser.parse(body)
     local works = self:parseSearchResults(root)
 
-    logger.dbg("Found works:", works)
     return works
 end
 
@@ -674,13 +678,11 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
     end
 
     local body = table.concat(response_body)
-    logger.dbg("Search response body:", body)
 
     -- Parse the HTML response
     local root = htmlparser.parse(body)
     local works = self:parseSearchResults(root)
 
-    logger.dbg("Found works:", works)
     return works
 end
 
@@ -758,7 +760,6 @@ function AO3Downloader:searchForTag(query, type)
         end
     end
 
-    logger.dbg("Found fandoms:", fandoms)
     return fandoms
 end
 
