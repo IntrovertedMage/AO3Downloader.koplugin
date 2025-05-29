@@ -88,11 +88,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                 {
                                     text = _("Open"),
                                     callback = function()
+                                        UIManager:close(self.browse_window)
                                         FanficReader:show({
                                             fanfic_path = downloadedFanfic.path,
                                             current_fanfic = downloadedFanfic
                                         })
-                                        UIManager:close(self.browse_window)
 
                                     end,
                                 },
@@ -187,7 +187,7 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
 
                 -- Update the total number of pages
                 selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
-                local browse_window = BrowseWindow:new{
+                self.browse_window = BrowseWindow:new{
                     title = selfself.title,
                     title_bar_fm_style = true,
                     is_popout = false,
@@ -198,7 +198,7 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
                     parentMenu = selfself.parentMenu,
                     preventParentClose = true
                 }
-                UIManager:show(browse_window)
+                UIManager:show(self.browse_window)
                 UIManager:close(selfself)
                 selfself:onClose()
             end
