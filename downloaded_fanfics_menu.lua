@@ -341,7 +341,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
 end
 
 function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
-    if not fanfic.chapter_options then
+    if not fanfic.chapter_data then
         return
     end
 
