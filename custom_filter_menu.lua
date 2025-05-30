@@ -33,6 +33,28 @@ function util.remove(tableValue, value)
     end
 end
 
+-- From: http://lua-users.org/wiki/CopyTable
+local function deepcopy(orig, copies)
+    copies = copies or {}
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        if copies[orig] then
+            copy = copies[orig]
+        else
+            copy = {}
+            copies[orig] = copy
+            for orig_key, orig_value in next, orig, nil do
+                copy[deepcopy(orig_key, copies)] = deepcopy(orig_value, copies)
+            end
+            setmetatable(copy, deepcopy(getmetatable(orig), copies))
+        end
+    else -- number, string, boolean, etc
+        copy = orig
+    end
+    return copy
+end
+
 local CustomFilterMenu = {}
 
 function CustomFilterMenu:goBack()
@@ -595,7 +617,7 @@ function CustomFilterMenu:FilterCrafter()
 end
 
 function CustomFilterMenu:UpdateFilterCrafter(filter)
-    self.filter = filter.parameters
+    self.filter = deepcopy(filter.parameters)
     local filterMenuOptions = {
         {
             text_func = function()
