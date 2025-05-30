@@ -11,7 +11,7 @@ local _ = require("gettext")
 function util.contains(tableValue, value, comparisonFunction)
     logger.dbg(tableValue)
     if comparisonFunction == nil then
-        comparisonFunction = function (v1, v2)
+        comparisonFunction = function(v1, v2)
             return v1 == v2
         end
     end
@@ -52,84 +52,80 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
     self.menuWidget.lock_return = true
     local menu_items = {}
     for __, option in pairs(options) do
-        table.insert(menu_items,
-            {
-                text_func = function ()
-                    local show_checked = util.contains(self.filter[settingValue], option.value)
-                    local show_crossed = util.contains(self.filter[excludeSettingValue], option.value)
-                    if show_checked then
-                        return "✓ " .. option.text
-                    elseif show_crossed then
-                        return "× " .. option.text
-                    else
-                        return option.text
-                    end
-                end,
-                callback = function ()
-                    if util.contains(self.filter[settingValue], option.value) then
-                        util.remove(self.filter[settingValue], option.value)
-                        table.insert(self.filter[excludeSettingValue], option.value)
-                    elseif util.contains(self.filter[excludeSettingValue], option.value) then
-                        util.remove(self.filter[excludeSettingValue], option.value)
-                    else
-                        table.insert(self.filter[settingValue], option.value)
-                    end
-                    self.menuWidget:updateItems()
-                end,
-            }
-        )
+        table.insert(menu_items, {
+            text_func = function()
+                local show_checked = util.contains(self.filter[settingValue], option.value)
+                local show_crossed = util.contains(self.filter[excludeSettingValue], option.value)
+                if show_checked then
+                    return "✓ " .. option.text
+                elseif show_crossed then
+                    return "× " .. option.text
+                else
+                    return option.text
+                end
+            end,
+            callback = function()
+                if util.contains(self.filter[settingValue], option.value) then
+                    util.remove(self.filter[settingValue], option.value)
+                    table.insert(self.filter[excludeSettingValue], option.value)
+                elseif util.contains(self.filter[excludeSettingValue], option.value) then
+                    util.remove(self.filter[excludeSettingValue], option.value)
+                else
+                    table.insert(self.filter[settingValue], option.value)
+                end
+                self.menuWidget:updateItems()
+            end,
+        })
     end
 
-    table.insert(menu_items,
-        {
-            text = "← Back to filters",
-            callback = function ()
-                if #self.filter[settingValue] == 0 then
-                    self.filter[settingValue] = nil
-                end
-                if #self.filter[excludeSettingValue] == 0 then
-                    self.filter[excludeSettingValue] = nil
-                end
-                self.menuWidget.lock_return = false
-                self:goBack()
-                self.menuWidget:updateItems()
+    table.insert(menu_items, {
+        text = "← Back to filters",
+        callback = function()
+            if #self.filter[settingValue] == 0 then
+                self.filter[settingValue] = nil
             end
-        }
-    )
+            if #self.filter[excludeSettingValue] == 0 then
+                self.filter[excludeSettingValue] = nil
+            end
+            self.menuWidget.lock_return = false
+            self:goBack()
+            self.menuWidget:updateItems()
+        end,
+    })
 
     self.menuWidget:GoDownInMenu(title, menu_items, "Tap to add to add to filter, and again for exclude filter")
 end
 
 function CustomFilterMenu:textboxWidget(title, setting)
     local inputDialog
-    inputDialog = InputDialog:new{
+    inputDialog = InputDialog:new({
         title = title,
         input = "",
         input_type = "text",
         buttons = {
             {
-            {
-                text = _("Cancel"),
-                callback = function()
-                    UIManager:close(inputDialog)
-                end,
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(inputDialog)
+                    end,
+                },
+                {
+                    text = _("Enter"),
+                    is_enter_default = true,
+                    callback = function()
+                        local value = inputDialog:getInputText()
+                        if value == "" then
+                            value = nil
+                        end
+                        self.filter[setting] = value
+                        self.menuWidget:updateItems()
+                        UIManager:close(inputDialog)
+                    end,
+                },
             },
-            {
-                text = _("Enter"),
-                is_enter_default = true,
-                callback = function()
-                    local value = inputDialog:getInputText()
-                    if value == "" then
-                        value = nil
-                    end
-                    self.filter[setting] = value
-                    self.menuWidget:updateItems()
-                    UIManager:close(inputDialog)
-                end,
-            },
-            }
         },
-    }
+    })
     UIManager:show(inputDialog)
     inputDialog:onShowKeyboard()
 end
@@ -138,23 +134,21 @@ function CustomFilterMenu:selectionWidget(title, options, setting)
     self.menuWidget.lock_return = true
     local menu_items = {}
     for __, option in pairs(options) do
-        table.insert( menu_items,
-            {
-                text = option.text,
-                callback = function()
-                    self.filter[setting] = option.value
-                    self.menuWidget.lock_return = false
-                    self:goBack()
-                end
-            }
-        )
+        table.insert(menu_items, {
+            text = option.text,
+            callback = function()
+                self.filter[setting] = option.value
+                self.menuWidget.lock_return = false
+                self:goBack()
+            end,
+        })
     end
     self.menuWidget:GoDownInMenu(title, menu_items, "Select option to filter by")
 end
 
 function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settingValue)
     self.menuWidget.lock_return = true
-    local excludeSettingValue = "exclude_"..settingValue
+    local excludeSettingValue = "exclude_" .. settingValue
 
     if self.filter[settingValue] == nil then
         self.filter[settingValue] = {}
@@ -167,7 +161,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
         local menu_items = {}
         table.insert(menu_items, {
             text = "← Back to filters menu",
-            callback = function ()
+            callback = function()
                 if #self.filter[settingValue] == 0 then
                     self.filter[settingValue] = nil
                 end
@@ -177,55 +171,58 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
 
                 self.menuWidget.lock_return = false
                 self:goBack()
-            end
+            end,
         })
 
         table.insert(menu_items, {
             text = "\u{f002} Search for tags to add to filter",
-            callback = function ()
+            callback = function()
                 local inputDialog
-                inputDialog = InputDialog:new{
+                inputDialog = InputDialog:new({
                     title = title,
                     input = "",
                     input_type = "text",
                     buttons = {
                         {
-                        {
-                            text = _("Cancel"),
-                            callback = function()
-                                UIManager:close(inputDialog)
-                            end,
+                            {
+                                text = _("Cancel"),
+                                callback = function()
+                                    UIManager:close(inputDialog)
+                                end,
+                            },
+                            {
+                                text = _("Search"),
+                                is_enter_default = true,
+                                callback = function()
+                                    local value = inputDialog:getInputText()
+                                    if value == "" then
+                                        return
+                                    end
+                                    local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                                    self:tagSearchSelectionWidget(
+                                        "Tap on character tags to add to filter",
+                                        tagSearchResults,
+                                        settingValue,
+                                        refresh
+                                    )
+                                    UIManager:close(inputDialog)
+                                end,
+                            },
                         },
-                        {
-                            text = _("Search"),
-                            is_enter_default = true,
-                            callback = function()
-                                local value = inputDialog:getInputText()
-                                if value == "" then
-                                    return
-                                end
-                                local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                                self:tagSearchSelectionWidget("Tap on character tags to add to filter", tagSearchResults, settingValue, refresh)
-                                UIManager:close(inputDialog)
-
-
-                            end,
-                        },
-                        }
                     },
-                }
+                })
                 UIManager:show(inputDialog)
                 inputDialog:onShowKeyboard()
-            end
+            end,
         })
 
         for __, tag in pairs(self.filter[settingValue]) do
             table.insert(menu_items, {
                 text = "✓ " .. tag,
                 value = tag,
-                callback = function ()
+                callback = function()
                     local optionsDialog
-                    optionsDialog = ButtonDialog:new{
+                    optionsDialog = ButtonDialog:new({
                         buttons = {
                             {
                                 {
@@ -238,7 +235,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                                 {
                                     text = "Remove tag",
@@ -247,30 +244,28 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                                 {
                                     text = "Cancel",
                                     callback = function()
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
-                            }
-                        }
-
-                    }
+                            },
+                        },
+                    })
                     UIManager:show(optionsDialog)
-
-                end
+                end,
             })
         end
         for __, tag in pairs(self.filter[excludeSettingValue]) do
             table.insert(menu_items, {
-                text =  "× " .. tag,
+                text = "× " .. tag,
                 value = tag,
-                callback = function ()
+                callback = function()
                     local optionsDialog
-                    optionsDialog = ButtonDialog:new{
+                    optionsDialog = ButtonDialog:new({
                         buttons = {
                             {
                                 {
@@ -283,7 +278,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
                             {
@@ -294,7 +289,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
                             {
@@ -302,33 +297,29 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     text = "Cancel",
                                     callback = function()
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
-                            }
-                        }
-
-                    }
+                            },
+                        },
+                    })
                     UIManager:show(optionsDialog)
-
-                end
+                end,
             })
         end
-
 
         return menu_items
     end
 
     self.menuWidget:GoDownInMenu(title, refresh())
-
 end
 
 function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, settingValue, refreshCallback)
     local menu_items = {}
-    local excludeSettingValue = "exclude_"..settingValue
+    local excludeSettingValue = "exclude_" .. settingValue
 
     table.insert(menu_items, {
         text = "← Exit search",
-        callback = function ()
+        callback = function()
             self.menuWidget.lock_return = false
             self:goBack()
             self.menuWidget.lock_return = true
@@ -339,7 +330,7 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
 
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
-            text_func = function ()
+            text_func = function()
                 local show_checked = util.contains(self.filter[settingValue], tag.name)
                 local show_cross = util.contains(self.filter[excludeSettingValue], tag.name)
                 if show_checked then
@@ -350,53 +341,57 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
                     return tag.name
                 end
             end,
-            callback = function ()
-                    if util.contains(self.filter[settingValue], tag.name) then
-                        util.remove(self.filter[settingValue], tag.name)
-                        table.insert(self.filter[excludeSettingValue], tag.name)
-                    elseif util.contains(self.filter[excludeSettingValue], tag.name) then
-                        util.remove(self.filter[excludeSettingValue], tag.name)
-                    else
-                        table.insert(self.filter[settingValue], tag.name)
-                    end
-                    self.menuWidget:updateItems()
+            callback = function()
+                if util.contains(self.filter[settingValue], tag.name) then
+                    util.remove(self.filter[settingValue], tag.name)
+                    table.insert(self.filter[excludeSettingValue], tag.name)
+                elseif util.contains(self.filter[excludeSettingValue], tag.name) then
+                    util.remove(self.filter[excludeSettingValue], tag.name)
+                else
+                    table.insert(self.filter[settingValue], tag.name)
+                end
+                self.menuWidget:updateItems()
             end,
         })
     end
 
-    self.menuWidget:GoDownInMenu(title, menu_items, "Tap tag to add to filter, again for exclude filter" )
+    self.menuWidget:GoDownInMenu(title, menu_items, "Tap tag to add to filter, again for exclude filter")
 end
 
 function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settingValue)
     local inputDialog
-    inputDialog = InputDialog:new{
+    inputDialog = InputDialog:new({
         title = title,
         input = "",
         input_type = "text",
         buttons = {
             {
-            {
-                text = _("Cancel"),
-                callback = function()
-                    UIManager:close(inputDialog)
-                end,
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(inputDialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local value = inputDialog:getInputText()
+                        if value == "" then
+                            return
+                        end
+                        local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                        self:singleTagSearchSelection(
+                            "Tap on character tags to add to filter",
+                            tagSearchResults,
+                            settingValue
+                        )
+                        UIManager:close(inputDialog)
+                    end,
+                },
             },
-            {
-                text = _("Search"),
-                is_enter_default = true,
-                callback = function()
-                    local value = inputDialog:getInputText()
-                    if value == "" then
-                        return
-                    end
-                    local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                    self:singleTagSearchSelection("Tap on character tags to add to filter", tagSearchResults, settingValue)
-                    UIManager:close(inputDialog)
-                end,
-            },
-            }
         },
-    }
+    })
     UIManager:show(inputDialog)
     inputDialog:onShowKeyboard()
 end
@@ -406,14 +401,14 @@ function CustomFilterMenu:singleTagSearchSelection(title, tagSearchResults, sett
 
     table.insert(menu_items, {
         text = "← Exit search",
-        callback = function ()
+        callback = function()
             self:goBack()
         end,
     })
 
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
-            text_func = function ()
+            text_func = function()
                 local show_checked = self.filter[settingValue] == tag.name
                 if show_checked then
                     return "✓ " .. tag.name
@@ -421,7 +416,7 @@ function CustomFilterMenu:singleTagSearchSelection(title, tagSearchResults, sett
                     return tag.name
                 end
             end,
-            callback = function ()
+            callback = function()
                 self.filter[settingValue] = tag.name
                 self:goBack()
             end,
@@ -435,28 +430,27 @@ function CustomFilterMenu:show(menuWidget, fanfic)
     self.menuWidget = menuWidget
     self.fanfic = fanfic
     local refresh
-    refresh = function ()
+    refresh = function()
         local menuOptions = {
             {
                 text = "+ Create new filter",
                 callback = function()
                     CustomFilterMenu:FilterCrafter()
-                end
+                end,
             },
         }
         local filters = Config:readSetting("saved_filters", {})
         if #filters > 0 then
             table.insert(menuOptions, {
-                text = "Saved filters:"
+                text = "Saved filters:",
             })
-
         end
         for __, filter in pairs(filters) do
             table.insert(menuOptions, {
                 text = "     " .. filter.title,
-                callback = function ()
+                callback = function()
                     local optionsDialog
-                    optionsDialog = ButtonDialog:new{
+                    optionsDialog = ButtonDialog:new({
                         buttons = {
                             {
                                 {
@@ -465,7 +459,7 @@ function CustomFilterMenu:show(menuWidget, fanfic)
                                         self.filter = filter.parameters
                                         self:executeSearch()
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
                             {
@@ -474,7 +468,7 @@ function CustomFilterMenu:show(menuWidget, fanfic)
                                     callback = function()
                                         self:UpdateFilterCrafter(filter)
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
                             {
@@ -494,7 +488,7 @@ function CustomFilterMenu:show(menuWidget, fanfic)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems()
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
                             {
@@ -502,14 +496,13 @@ function CustomFilterMenu:show(menuWidget, fanfic)
                                     text = "Cancel",
                                     callback = function()
                                         UIManager:close(optionsDialog)
-                                    end
+                                    end,
                                 },
                             },
-                        }
-
-                    }
+                        },
+                    })
                     UIManager:show(optionsDialog)
-                end
+                end,
             })
         end
         return menuOptions
@@ -553,200 +546,221 @@ function CustomFilterMenu:FilterCrafter()
 
     local filterMenuOptions = {
         {
-            text_func = function ()
+            text_func = function()
                 return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
             end,
-            callback = function ()
-               self:selectMainTag()
-            end
+            callback = function()
+                self:selectMainTag()
+            end,
         },
         {
             text = "Work Info filters \u{23F5}",
-            callback = function ()
-               self:WorkInfoSubmenu()
-            end
+            callback = function()
+                self:WorkInfoSubmenu()
+            end,
         },
         {
             text = "Work Tags filters \u{23F5}",
-            callback = function ()
-               self:WorkTagsSubmenu()
-            end
+            callback = function()
+                self:WorkTagsSubmenu()
+            end,
         },
         {
             text = "Work Stats filters \u{23F5}",
-            callback = function ()
-               self:WorkStatSubmenu()
-            end
+            callback = function()
+                self:WorkStatSubmenu()
+            end,
         },
         {
             text = "Search Order filters \u{23F5}",
-            callback = function ()
-               self:WorkOrderSubmenu()
-            end
+            callback = function()
+                self:WorkOrderSubmenu()
+            end,
         },
         {
             text = "\u{2193} Save current filter",
-            callback = function ()
+            callback = function()
                 self:SaveFilters()
-            end
+            end,
         },
         {
             text = "\u{f002} Execute Search",
-            callback = function ()
+            callback = function()
                 self:executeSearch()
-            end
-        }
+            end,
+        },
     }
 
-    self.menuWidget:GoDownInMenu("Create filter",filterMenuOptions)
-
+    self.menuWidget:GoDownInMenu("Create filter", filterMenuOptions)
 end
 
 function CustomFilterMenu:UpdateFilterCrafter(filter)
     self.filter = filter.parameters
     local filterMenuOptions = {
         {
-            text_func = function ()
+            text_func = function()
                 return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
             end,
-            callback = function ()
-               self:selectMainTag()
-            end
+            callback = function()
+                self:selectMainTag()
+            end,
         },
         {
             text = "Work Info filters \u{23F5}",
-            callback = function ()
-               self:WorkInfoSubmenu()
-            end
+            callback = function()
+                self:WorkInfoSubmenu()
+            end,
         },
         {
             text = "Work Tags filters \u{23F5}",
-            callback = function ()
-               self:WorkTagsSubmenu()
-            end
+            callback = function()
+                self:WorkTagsSubmenu()
+            end,
         },
         {
             text = "Work Stats filters \u{23F5}",
-            callback = function ()
-               self:WorkStatSubmenu()
-            end
+            callback = function()
+                self:WorkStatSubmenu()
+            end,
         },
         {
             text = "Search Order filters \u{23F5}",
-            callback = function ()
-               self:WorkOrderSubmenu()
-            end
+            callback = function()
+                self:WorkOrderSubmenu()
+            end,
         },
         {
-            text = "\u{2193} Save current filter",
-            callback = function ()
+            text = "\u{2193} Save as current filter",
+            callback = function()
+                local optionsDialog
+                optionsDialog = ButtonDialog:new({
+                    title = "Do you want to overwrite the filter '" .. filter.title .. "' ?",
+                    buttons = {
+                        {
+                            {
+                                text = "Cancel",
 
-                    local filters = Config:readSetting("saved_filters",{})
-                    util.remove(filters, filter)
-
-                    for idx, c_filter in pairs(filters) do
-                        if c_filter.title == filter.title then
-                            table.remove(filters, idx)
-                            break
-                        end
-                    end
-
-                    table.insert(filters, 1, {title = filter.title, parameters = self.filter})
-                    Config:saveSetting("saved_filters", filters)
-                    UIManager:show(InfoMessage:new{
-                        text = 'Filter "'.. filter.title  .. '" has been saved',
-                    })
-            end
+                                callback = function()
+                                    UIManager:close(optionsDialog)
+                                end,
+                            },
+                            {
+                                text = "Overwrite",
+                                callback = function()
+                                    UIManager:close(optionsDialog)
+                                    self:OverwriteFilter(filter)
+                                end,
+                            },
+                        },
+                    },
+                })
+                UIManager:show(optionsDialog)
+            end,
         },
         {
             text = "\u{2193} Save as new filter",
-            callback = function ()
+            callback = function()
                 self:SaveFilters()
-            end
+            end,
         },
         {
             text = "\u{f002} Execute Search",
-            callback = function ()
+            callback = function()
                 self:executeSearch()
-            end
-        }
+            end,
+        },
     }
 
-    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title ,filterMenuOptions)
-
+    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title, filterMenuOptions)
 end
 
 function CustomFilterMenu:selectMainTag()
     self:singleTagSelection("Select main tag", "", "main_tag")
 end
 
+function CustomFilterMenu:OverwriteFilter(filter)
+    local filters = Config:readSetting("saved_filters", {})
+
+    for idx, c_filter in pairs(filters) do
+        if c_filter.title == filter.title then
+            table.remove(filters, idx)
+            break
+        end
+    end
+
+    table.insert(filters, 1, { title = filter.title, parameters = self.filter })
+    Config:saveSetting("saved_filters", filters)
+    UIManager:show(InfoMessage:new({
+        text = 'Filter "' .. filter.title .. '" has been overwritten',
+    }))
+end
+
 function CustomFilterMenu:SaveFilters()
     local inputDialog
-    inputDialog = InputDialog:new{
+    inputDialog = InputDialog:new({
         title = "Enter title to save filter under",
         input = "",
         input_type = "text",
         buttons = {
             {
-            {
-                text = _("Cancel"),
-                callback = function()
-                    UIManager:close(inputDialog)
-                end,
-            },
-            {
-                text = _("Save"),
-                is_enter_default = true,
-                callback = function()
-                    local value = inputDialog:getInputText()
-                    if value == "" then
-                        return
-                    end
-
-                    local comparisonFunction = function (tablevalue, value)
-                       return tablevalue["title"] == value
-                    end
-
-                    local filters = Config:readSetting("saved_filters",{})
-                    local alreadyUsed = false
-
-                    for _, v in ipairs(filters) do
-                        if comparisonFunction(v, value) then
-                            alreadyUsed = true
-                            break
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(inputDialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local value = inputDialog:getInputText()
+                        if value == "" then
+                            return
                         end
-                    end
 
-                    if  alreadyUsed then
-                        UIManager:show(InfoMessage:new{
-                            text = 'Title "'.. value  .. '" is already being used, enter different title',
-                        })
-                        return
-                    end
+                        local comparisonFunction = function(tablevalue, value)
+                            return tablevalue["title"] == value
+                        end
 
-                    local newFilter  = {title = value, parameters = self.filter}
-                    table.insert(filters, 1, newFilter)
-                    Config:saveSetting("saved_filters", filters)
-                    UIManager:show(InfoMessage:new{
-                        text = 'Filter "'.. value  .. '" has been saved',
-                    })
-                    self:goBack()
-                    self:UpdateFilterCrafter(newFilter)
-                    UIManager:close(inputDialog)
-                end,
+                        local filters = Config:readSetting("saved_filters", {})
+                        local alreadyUsed = false
+
+                        for _, v in ipairs(filters) do
+                            if comparisonFunction(v, value) then
+                                alreadyUsed = true
+                                break
+                            end
+                        end
+
+                        if alreadyUsed then
+                            UIManager:show(InfoMessage:new({
+                                text = 'Title "' .. value .. '" is already being used, enter different title',
+                            }))
+                            return
+                        end
+
+                        local newFilter = { title = value, parameters = self.filter }
+                        table.insert(filters, 1, newFilter)
+                        Config:saveSetting("saved_filters", filters)
+                        UIManager:show(InfoMessage:new({
+                            text = 'Filter "' .. value .. '" has been saved',
+                        }))
+                        self:goBack()
+                        self:UpdateFilterCrafter(newFilter)
+                        UIManager:close(inputDialog)
+                    end,
+                },
             },
-            }
         },
-    }
+    })
     UIManager:show(inputDialog)
     inputDialog:onShowKeyboard()
-
 end
 
 function CustomFilterMenu:WorkTagsSubmenu()
     local menu_items = {
         {
-            text_func = function ()
+            text_func = function()
                 local fandomStrings = {}
 
                 if self.filter.fandom_names then
@@ -762,12 +776,12 @@ function CustomFilterMenu:WorkTagsSubmenu()
                 end
                 return "Fandoms: " .. ((#fandomStrings > 0) and table.concat(fandomStrings, ", ") or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectedFandoms()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_rating = {
                     ["9"] = "not rated",
                     ["10"] = "general audiences",
@@ -778,12 +792,12 @@ function CustomFilterMenu:WorkTagsSubmenu()
 
                 return "Rating: " .. (key_to_rating[self.filter.rating] or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectRating()
-            end
+            end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_warnings = {
                     ["14"] = "Creator Choose Not To Use Archive Warnings",
                     ["17"] = "Graphic Depictions Of Violence",
@@ -807,12 +821,12 @@ function CustomFilterMenu:WorkTagsSubmenu()
                 return "Warnings: " .. ((#warningStrings > 0) and table.concat(warningStrings, ", ") or "Any")
             end,
 
-            callback = function ()
+            callback = function()
                 self:selectWarnings()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_catagory = {
                     ["116"] = "F/F",
                     ["22"] = "F/M",
@@ -838,12 +852,12 @@ function CustomFilterMenu:WorkTagsSubmenu()
                 logger.dbg(catagoryStrings)
                 return "Catagories: " .. ((#catagoryStrings > 0) and table.concat(catagoryStrings, ", ") or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectCatagories()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local characterStrings = {}
 
                 if self.filter.characters then
@@ -860,12 +874,12 @@ function CustomFilterMenu:WorkTagsSubmenu()
                 logger.dbg(characterStrings)
                 return "Characters: " .. ((#characterStrings > 0) and table.concat(characterStrings, ", ") or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectCharacters()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local relationshipStrings = {}
 
                 if self.filter.relationships then
@@ -879,14 +893,15 @@ function CustomFilterMenu:WorkTagsSubmenu()
                         table.insert(relationshipStrings, "-" .. relationship)
                     end
                 end
-                return "Relationships: " .. ((#relationshipStrings > 0) and table.concat(relationshipStrings, ", ") or "Any")
+                return "Relationships: "
+                    .. ((#relationshipStrings > 0) and table.concat(relationshipStrings, ", ") or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectRelationships()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local freemformStrings = {}
 
                 if self.filter.additional_tags then
@@ -900,21 +915,21 @@ function CustomFilterMenu:WorkTagsSubmenu()
                         table.insert(freemformStrings, "-" .. tag)
                     end
                 end
-                return "Additional Tags: " .. ((#freemformStrings > 0) and table.concat(freemformStrings, ", ") or "Any")
+                return "Additional Tags: "
+                    .. ((#freemformStrings > 0) and table.concat(freemformStrings, ", ") or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectAdditionalTags()
             end,
         },
     }
     self.menuWidget:GoDownInMenu("Create filter: Work Tags", menu_items)
-
 end
 
 function CustomFilterMenu:WorkInfoSubmenu()
     local menu_items = {
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_completion = {
                     ["T"] = "Complete works only",
                     ["F"] = "Works in progress only",
@@ -922,12 +937,12 @@ function CustomFilterMenu:WorkInfoSubmenu()
 
                 return "Completion status: " .. (key_to_completion[self.filter.completion_status] or "All works")
             end,
-            callback = function ()
+            callback = function()
                 self:selectCompletionStatus()
-            end
+            end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_crossovers = {
                     ["F"] = "Exclude crossovers",
                     ["T"] = "Only crossovers",
@@ -935,98 +950,96 @@ function CustomFilterMenu:WorkInfoSubmenu()
 
                 return "Crossovers: " .. (key_to_crossovers[self.filter.crossovers] or "Include crossovers")
             end,
-            callback = function ()
+            callback = function()
                 self:selectCrossovers()
-            end
+            end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Single Chapter: " .. (self.filter.single_chapter and "Single chapter works only" or "All works")
             end,
-            callback = function ()
+            callback = function()
                 self:selectSingleChapter()
-            end
+            end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Word Count: " .. (self.filter.word_count or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectWordCount()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Language: " .. (self.filter.language_id or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectLanguage()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Date Updated from: " .. (self.filter.date_from or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectDateFrom()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Date Updated to: " .. (self.filter.date_to or "Any")
             end,
-            callback = function ()
+            callback = function()
                 self:selectDateTo()
             end,
         },
     }
     self.menuWidget:GoDownInMenu("Create filter: Work Info", menu_items)
-
 end
 
 function CustomFilterMenu:WorkStatSubmenu()
     local menu_items = {
         {
-            text_func = function ()
+            text_func = function()
                 return "Hits: " .. (self.filter.hits or "any amount")
             end,
-            callback = function ()
+            callback = function()
                 self:selectHits()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Kudos: " .. (self.filter.kudos or "any amount")
             end,
-            callback = function ()
+            callback = function()
                 self:selectKudos()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Comments: " .. (self.filter.comments or "any amount")
             end,
-            callback = function ()
+            callback = function()
                 self:selectWordCount()
             end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 return "Bookmarks: " .. (self.filter.bookmarks or "any amount")
             end,
-            callback = function ()
+            callback = function()
                 self:selectWordCount()
             end,
         },
     }
     self.menuWidget:GoDownInMenu("Create filter: Work Stats", menu_items)
-
 end
 
 function CustomFilterMenu:WorkOrderSubmenu()
     local menu_items = {
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_sort = {
                     ["authors_to_sort_on"] = "Author",
                     ["title_to_sort_on"] = "Title",
@@ -1041,12 +1054,12 @@ function CustomFilterMenu:WorkOrderSubmenu()
 
                 return "Sort By: " .. (key_to_sort[self.filter.sort_by] or "Date Updated")
             end,
-            callback = function ()
+            callback = function()
                 self:selectSortBy()
-            end
+            end,
         },
         {
-            text_func = function ()
+            text_func = function()
                 local key_to_direction = {
                     ["asc"] = "Ascending",
                     ["desc"] = "Descending",
@@ -1054,13 +1067,12 @@ function CustomFilterMenu:WorkOrderSubmenu()
 
                 return "Sort by: " .. (key_to_direction[self.filter.sort_direction] or "Descending")
             end,
-            callback = function ()
+            callback = function()
                 self:selectSortDirection()
-            end
+            end,
         },
     }
     self.menuWidget:GoDownInMenu("Create filter: Search Order", menu_items)
-
 end
 
 function CustomFilterMenu:selectCompletionStatus()
@@ -1120,7 +1132,7 @@ function CustomFilterMenu:selectSingleChapter()
         {
             text = "Single chapter works only",
             value = "1",
-        }
+        },
     }
 
     local setting = "single_chapter"
@@ -1173,21 +1185,18 @@ function CustomFilterMenu:selectLanguage()
     local title = "Enter language id (eg en for English, es for Spanish)"
     local setting = "language_id"
     self:textboxWidget(title, setting)
-
 end
 
 function CustomFilterMenu:selectDateFrom()
     local title = "Enter date updated from (YYYY-MM-DD)"
     local setting = "date_from"
     self:textboxWidget(title, setting)
-
 end
 
 function CustomFilterMenu:selectDateTo()
     local title = "Enter date updated to (YYYY-MM-DD)"
     local setting = "date_to"
     self:textboxWidget(title, setting)
-
 end
 
 function CustomFilterMenu:selectedFandoms()
@@ -1196,7 +1205,7 @@ end
 
 function CustomFilterMenu:selectWarnings()
     local title = "Select warnings"
-    local menu_items =  {
+    local menu_items = {
         {
             text = "Creator Choose Not To Use Archive Warnings",
             value = "14",
@@ -1225,7 +1234,6 @@ function CustomFilterMenu:selectWarnings()
 
     local setting = "warnings"
     self:checkboxWidget(title, menu_items, setting)
-
 end
 
 function CustomFilterMenu:selectCatagories()
@@ -1337,7 +1345,7 @@ function CustomFilterMenu:selectSortBy()
         },
     }
     local setting = "sort_by"
-    self:selectionWidget(title,options,setting)
+    self:selectionWidget(title, options, setting)
 end
 
 function CustomFilterMenu:selectSortDirection()
@@ -1350,7 +1358,7 @@ function CustomFilterMenu:selectSortDirection()
         {
             text = "Descending",
             value = "desc",
-        }
+        },
     }
     local setting = "sort_direction"
     self:selectionWidget(title, options, setting)
@@ -1359,9 +1367,9 @@ end
 -- Execute the search with the crafted filter
 function CustomFilterMenu:executeSearch()
     if not self.filter.main_tag then
-        UIManager:show(InfoMessage:new{
+        UIManager:show(InfoMessage:new({
             text = _("Main tag is required"),
-        })
+        }))
         return
     end
     UIManager:scheduleIn(1, function()
@@ -1373,15 +1381,21 @@ function CustomFilterMenu:executeSearch()
             ["work_search[language_id]"] = self.filter.language_id or nil,
             ["work_search[date_from]"] = self.filter.date_from or nil,
             ["work_search[date_to]"] = self.filter.date_to or nil,
-            ["work_search[fandom_names]"] = self.filter.fandom_names and table.concat(self.filter.fandom_names, ",") or nil,
+            ["work_search[fandom_names]"] = self.filter.fandom_names and table.concat(self.filter.fandom_names, ",")
+                or nil,
             ["work_search[rating_ids]"] = self.filter.rating or nil,
             ["work_search[archive_warning_ids][]"] = self.filter.warnings or nil,
             ["exclude_work_search[archive_warning_ids][]"] = self.filter.exclude_warnings or nil,
             ["work_search[category_ids][]"] = self.filter.categories or nil,
             ["exclude_work_search[category_ids][]"] = self.filter.exclude_categories or nil,
-            ["work_search[character_names]"] = self.filter.characters and table.concat(self.filter.characters, ",") or nil,
-            ["work_search[relationship_names]"] = self.filter.relationships and table.concat(self.filter.relationships, ",") or nil,
-            ["work_search[freeform_names]"] = self.filter.additional_tags and table.concat(self.filter.additional_tags, ",") or nil,
+            ["work_search[character_names]"] = self.filter.characters and table.concat(self.filter.characters, ",")
+                or nil,
+            ["work_search[relationship_names]"] = self.filter.relationships
+                and table.concat(self.filter.relationships, ",")
+                or nil,
+            ["work_search[freeform_names]"] = self.filter.additional_tags
+                and table.concat(self.filter.additional_tags, ",")
+                or nil,
             ["work_search[hits]"] = self.filter.hits or nil,
             ["work_search[kudos_count]"] = self.filter.kudos or nil,
             ["work_search[comments_count]"] = self.filter.comments or nil,
@@ -1393,16 +1407,16 @@ function CustomFilterMenu:executeSearch()
                 self.filter.exclude_fandom_names and table.concat(self.filter.exclude_fandom_names, ",") or "",
                 self.filter.exclude_characters and table.concat(self.filter.exclude_characters, ",") or "",
                 self.filter.exclude_relationships and table.concat(self.filter.exclude_relationships, ",") or "",
-                self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ",") or ""
+                self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ",") or "",
             }, ","),
         }
         local success, ficResults, fetchNextPage = self.fanfic:executeSearch(parameters)
 
         if not success then
-            UIManager:show(InfoMessage:new{
+            UIManager:show(InfoMessage:new({
                 text = _("Failed to fetch results for the custom filter."),
                 timeout = 2,
-            })
+            }))
             return
         end
 
@@ -1412,15 +1426,19 @@ function CustomFilterMenu:executeSearch()
             self.menuWidget,
             ficResults,
             fetchNextPage,
-            function(fanfic) self.fanfic:UpdateFanfic(fanfic) end, -- Update callback
-            function(fanficId, parentMenu) self.fanfic:DownloadFanfic(fanficId, parentMenu ) end -- Download callback
+            function(fanfic)
+                self.fanfic:UpdateFanfic(fanfic)
+            end, -- Update callback
+            function(fanficId, parentMenu)
+                self.fanfic:DownloadFanfic(fanficId, parentMenu)
+            end -- Download callback
         )
     end)
 
-    UIManager:show(InfoMessage:new{
+    UIManager:show(InfoMessage:new({
         text = _("Searching with custom filter..."),
         timeout = 1,
-    })
+    }))
 end
 
 return CustomFilterMenu
