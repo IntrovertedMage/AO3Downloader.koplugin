@@ -49,8 +49,8 @@ end
 local function setCookies(responseHeaders)
     if responseHeaders["set-cookie"] then
         logger.dbg("cookies: " .. responseHeaders["set-cookie"])
-        for key, value  in string.gmatch(responseHeaders["set-cookie"], "([^=;%s]+)=([^;]*)") do
-            logger.dbg("cookie: ".. key .. "," .. value)
+        for key, value in string.gmatch(responseHeaders["set-cookie"], "([^=;%s]+)=([^;]*)") do
+            logger.dbg("cookie: " .. key .. "," .. value)
             if key and value then
                 cookies[key] = value
             end
@@ -91,7 +91,6 @@ local function performHttpsRequest(request)
     local max_retries = 3
     local response, status, response_headers
 
-
     -- Add cookies to the request headers
     logger.dbg("request url:" .. request.url)
     request.headers = request.headers or {}
@@ -99,19 +98,19 @@ local function performHttpsRequest(request)
     for i = 0, max_retries do
         socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
         response, status, response_headers = https.request({
-                url = request.url,
-                method = request.method or "GET",
-                headers = request.headers,
-                sink = request.sink,
-                protocol = "tlsv1_3", -- Explicitly set the protocol
-                options = "all",
-            })
+            url = request.url,
+            method = request.method or "GET",
+            headers = request.headers,
+            sink = request.sink,
+            protocol = "tlsv1_3", -- Explicitly set the protocol
+            options = "all",
+        })
 
         -- Parse and store cookies from the response
         if response_headers then
             setCookies(response_headers)
         end
-        logger.dbg("response:" .. response)
+        logger.dbg("response:" .. (response or ""))
 
         if not (response == 1) and i == max_retries then
             logger.dbg("Request failed Status:", status)
@@ -278,14 +277,14 @@ function AO3Downloader:parseSearchResults(root)
 
             -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
             local summary = summaryElement
-                    and parseToCodepoints(
-                        summaryElement
-                            :getcontent()
-                            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                            :gsub("<[^>]+>", "") -- Remove other HTML tags
-                            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-                    )
+                and parseToCodepoints(
+                    summaryElement
+                    :getcontent()
+                    :gsub("<br%s*/?>", "\n")            -- Replace <br> tags with new lines
+                    :gsub("</p>", "\n\n")               -- Add double new lines for paragraph breaks
+                    :gsub("<[^>]+>", "")                -- Remove other HTML tags
+                    :gsub("^%s*(.-)%s*$", "%1")         -- Trim whitespace
+                )
                 or "No summary available"
 
             -- Remove leading and trailing whitespace from the title
@@ -353,7 +352,7 @@ function AO3Downloader:getWorkMetadata(work_id)
         method = "GET",
         headers = headers,
         sink = ltn12.sink.table(response_body),
-        cookies = {["view_adult"] = "true"}
+        cookies = { ["view_adult"] = "true" },
     }
 
     local response, status = performHttpsRequest(request)
@@ -399,14 +398,14 @@ function AO3Downloader:getWorkMetadata(work_id)
         or "Unknown title" -- Trim whitespace
     local author = authorElement and parseToCodepoints(authorElement:getcontent()) or "Unknown author"
     local summary = summaryElement
-            and parseToCodepoints(
-                summaryElement
-                    :getcontent()
-                    :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                    :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                    :gsub("<[^>]+>", "") -- Remove other HTML tags
-                    :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-            )
+        and parseToCodepoints(
+            summaryElement
+            :getcontent()
+            :gsub("<br%s*/?>", "\n")            -- Replace <br> tags with new lines
+            :gsub("</p>", "\n\n")               -- Add double new lines for paragraph breaks
+            :gsub("<[^>]+>", "")                -- Remove other HTML tags
+            :gsub("^%s*(.-)%s*$", "%1")         -- Trim whitespace
+        )
         or "No summary available"
 
     local chapterData = {}
@@ -631,7 +630,7 @@ function AO3Downloader:searchFic(parameters, page)
 end
 
 function AO3Downloader:searchByTag(tag_name, page, sort_column)
-    page = page or 1 -- Default to the first page if no page is specified
+    page = page or 1                          -- Default to the first page if no page is specified
     sort_column = sort_column or "revised_at" -- Default to sorting by most recently updated
 
     -- Encode the tag name for use in the URL
