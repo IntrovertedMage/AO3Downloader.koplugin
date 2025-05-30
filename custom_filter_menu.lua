@@ -38,7 +38,7 @@ local function deepcopy(orig, copies)
     copies = copies or {}
     local orig_type = type(orig)
     local copy
-    if orig_type == 'table' then
+    if orig_type == "table" then
         if copies[orig] then
             copy = copies[orig]
         else
@@ -451,86 +451,86 @@ end
 function CustomFilterMenu:show(menuWidget, fanfic)
     self.menuWidget = menuWidget
     self.fanfic = fanfic
-    local refresh
-    refresh = function()
-        local menuOptions = {
-            {
-                text = "+ Create new filter",
-                callback = function()
-                    CustomFilterMenu:FilterCrafter()
-                end,
-            },
-        }
-        local filters = Config:readSetting("saved_filters", {})
-        if #filters > 0 then
-            table.insert(menuOptions, {
-                text = "Saved filters:",
-            })
-        end
-        for __, filter in pairs(filters) do
-            table.insert(menuOptions, {
-                text = "     " .. filter.title,
-                callback = function()
-                    local optionsDialog
-                    optionsDialog = ButtonDialog:new({
-                        buttons = {
+
+    self.menuWidget:GoDownInMenu("Select filter", self:refreshMainMenu())
+end
+
+function CustomFilterMenu:refreshMainMenu()
+    local menuOptions = {
+        {
+            text = "+ Create new filter",
+            callback = function()
+                CustomFilterMenu:FilterCrafter()
+            end,
+        },
+    }
+    local filters = Config:readSetting("saved_filters", {})
+    if #filters > 0 then
+        table.insert(menuOptions, {
+            text = "Saved filters:",
+        })
+    end
+    for __, filter in pairs(filters) do
+        table.insert(menuOptions, {
+            text = "     " .. filter.title,
+            callback = function()
+                local optionsDialog
+                optionsDialog = ButtonDialog:new({
+                    buttons = {
+                        {
                             {
-                                {
-                                    text = "Search using filter",
-                                    callback = function()
-                                        self.filter = filter.parameters
-                                        self:executeSearch()
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = "Edit filter",
-                                    callback = function()
-                                        self:UpdateFilterCrafter(filter)
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = "Delete filter",
-                                    callback = function()
-                                        self.filter = filter.parameters
-                                        local filters = Config:readSetting("saved_filters")
-                                        util.remove(filters, filter)
-                                        for idx, c_filter in pairs(filters) do
-                                            if c_filter.title == filter.title then
-                                                table.remove(filters, idx)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting("saved_filters", filters)
-                                        self.menuWidget.item_table = refresh()
-                                        self.menuWidget:updateItems()
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = "Cancel",
-                                    callback = function()
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
+                                text = "Search using filter",
+                                callback = function()
+                                    self.filter = filter.parameters
+                                    self:executeSearch()
+                                    UIManager:close(optionsDialog)
+                                end,
                             },
                         },
-                    })
-                    UIManager:show(optionsDialog)
-                end,
-            })
-        end
-        return menuOptions
+                        {
+                            {
+                                text = "Edit filter",
+                                callback = function()
+                                    self:UpdateFilterCrafter(filter)
+                                    UIManager:close(optionsDialog)
+                                end,
+                            },
+                        },
+                        {
+                            {
+                                text = "Delete filter",
+                                callback = function()
+                                    self.filter = filter.parameters
+                                    local filters = Config:readSetting("saved_filters")
+                                    util.remove(filters, filter)
+                                    for idx, c_filter in pairs(filters) do
+                                        if c_filter.title == filter.title then
+                                            table.remove(filters, idx)
+                                            break
+                                        end
+                                    end
+                                    Config:saveSetting("saved_filters", filters)
+                                    self.menuWidget.item_table = self:refreshMainMenu()
+                                    self.menuWidget:updateItems()
+                                    UIManager:close(optionsDialog)
+                                end,
+                            },
+                        },
+                        {
+                            {
+                                text = "Cancel",
+                                callback = function()
+                                    UIManager:close(optionsDialog)
+                                end,
+                            },
+                        },
+                    },
+                })
+                UIManager:show(optionsDialog)
+            end,
+        })
     end
-
-    self.menuWidget:GoDownInMenu("Select filter", refresh())
+    return menuOptions
 end
 
 function CustomFilterMenu:FilterCrafter()
@@ -715,6 +715,7 @@ function CustomFilterMenu:OverwriteFilter(filter)
     UIManager:show(InfoMessage:new({
         text = 'Filter "' .. filter.title .. '" has been overwritten',
     }))
+    self.menuWidget:updateMenuBack(1, nil, CustomFilterMenu:refreshMainMenu(), nil)
 end
 
 function CustomFilterMenu:SaveFilters()
@@ -770,6 +771,7 @@ function CustomFilterMenu:SaveFilters()
                         self:goBack()
                         self:UpdateFilterCrafter(newFilter)
                         UIManager:close(inputDialog)
+                        self.menuWidget:updateMenuBack(1, nil, CustomFilterMenu:refreshMainMenu(), nil)
                     end,
                 },
             },

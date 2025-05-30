@@ -288,7 +288,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                                             end
                                                                         end
                                                                         parentMenu:updateItems()
-                                                                        parentMenu.paths[#parentMenu.paths].items = refreshDownloadMenu()
+                                                                        parentMenu:updateMenuBack(1, nil, refreshDownloadMenu(), nil)
                                                                         UIManager:close(confirmDialog)
 
                                                                     end,

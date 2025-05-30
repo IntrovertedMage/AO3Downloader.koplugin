@@ -24,7 +24,7 @@ function util.contains(table, value)
     return false
 end
 
-local FanficMenuWidget = Menu:extend{
+local FanficMenuWidget = Menu:extend({
     fanfic = nil,
     is_popout = false,
     is_borderless = true,
@@ -32,7 +32,7 @@ local FanficMenuWidget = Menu:extend{
     title = _("Fanfiction downloader"),
     subtitle = "",
     lock_return = false,
-}
+})
 
 -- Menu action on return-arrow tap (go to one-level upper catalog)
 function FanficMenuWidget:onReturn()
@@ -53,19 +53,27 @@ end
 function FanficMenuWidget:GoDownInMenu(newTitle, newItems, newSubtitle)
     table.insert(self.paths, {
         title = self.title,
-        subtitle = self.subtitle,
         items = self.item_table,
-
+        subtitle = self.subtitle,
     })
     self:switchItemTable(newTitle, newItems, -1, -1, newSubtitle)
     self.title = newTitle
     self.subtitle = newSubtitle
 end
+
+function FanficMenuWidget:updateMenuBack(backAmount, newTitle, newItems, newSubtitle)
+    local currentBackMenu = self.paths[#self.paths]
+    local index = #self.paths - (backAmount - 1)
+    self.paths[index].title = newTitle or currentBackMenu.title
+    self.paths[index].items = newItems or currentBackMenu.items
+    self.paths[index].subtitle = newSubtitle or currentBackMenu.subtitle
+end
+
 local FanficMenu = {}
 
 function FanficMenu:show(fanfic)
     self.fanfic = fanfic
-    self.menuWidget = FanficMenuWidget:new{
+    self.menuWidget = FanficMenuWidget:new({
         title = _("Fanfiction downloader"),
         item_table = {
             {
@@ -87,11 +95,10 @@ function FanficMenu:show(fanfic)
                 end,
             },
         },
-    }
+    })
 
     return self.menuWidget
 end
-
 
 function FanficMenu:onSearchFanficMenu()
     local menu_items = {
@@ -99,7 +106,7 @@ function FanficMenu:onSearchFanficMenu()
             text = _("Quick search"),
             callback = function()
                 self:onQuickSearchMenu()
-            end
+            end,
         },
         {
             text = _("Search using Filter search"), -- New menu item
@@ -114,7 +121,7 @@ function FanficMenu:onSearchFanficMenu()
             end,
         },
     }
-    self.menuWidget:GoDownInMenu("Select search mode" , menu_items)
+    self.menuWidget:GoDownInMenu("Select search mode", menu_items)
 end
 
 function FanficMenu:onQuickSearchMenu()
@@ -144,8 +151,7 @@ function FanficMenu:onQuickSearchMenu()
             end,
         },
     }
-    self.menuWidget:GoDownInMenu("Select quick search mode" , menu_items)
-
+    self.menuWidget:GoDownInMenu("Select quick search mode", menu_items)
 end
 
 function FanficMenu:onShowFanficSearch()
@@ -153,7 +159,6 @@ function FanficMenu:onShowFanficSearch()
         self.fanfic:DownloadFanfic(fanficId)
     end)
 end
-
 
 function FanficMenu:onSelectTag(category)
     local bookmarkSetting = T("bookmarked%1s", category)
@@ -180,40 +185,40 @@ function FanficMenu:onSelectTag(category)
                 callback = function()
                     -- Submenu for the selected fandom
                     local dialog
-                    dialog = ButtonDialog:new{
+                    dialog = ButtonDialog:new({
                         title = displayText,
                         buttons = {
                             {
-                            {
-                                text = _("Browse Works"),
-                                callback = function()
-                                    self:onBrowseByTag(tag)
-                                    UIManager:close(dialog)
-                                end,
-                            },
-                            {
-                                text = _(T("Unbookmark %1", category)),
-                                callback = function()
-                                    -- Remove the fandom from bookmarks
-                                    for i, v in ipairs(bookmarks) do
-                                        if v == tag then
-                                            table.remove(bookmarks, i)
-                                            break
+                                {
+                                    text = _("Browse Works"),
+                                    callback = function()
+                                        self:onBrowseByTag(tag)
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                                {
+                                    text = _(T("Unbookmark %1", category)),
+                                    callback = function()
+                                        -- Remove the fandom from bookmarks
+                                        for i, v in ipairs(bookmarks) do
+                                            if v == tag then
+                                                table.remove(bookmarks, i)
+                                                break
+                                            end
                                         end
-                                    end
-                                    Config:saveSetting(bookmarkSetting, bookmarks)
-                                    UIManager:show(InfoMessage:new{
-                                        text = T("'%1' has been removed from your bookmarks.", tag),
-                                    })
-                                    UIManager:close(dialog)
-                                    refreshMenu() -- Refresh the menu to update the star
-                                    self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
-                                    self.menuWidget:updateItems()
-                                end,
+                                        Config:saveSetting(bookmarkSetting, bookmarks)
+                                        UIManager:show(InfoMessage:new({
+                                            text = T("'%1' has been removed from your bookmarks.", tag),
+                                        }))
+                                        UIManager:close(dialog)
+                                        refreshMenu()                              -- Refresh the menu to update the star
+                                        self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
+                                        self.menuWidget:updateItems()
+                                    end,
+                                },
                             },
-                            }
-                        }
-                    }
+                        },
+                    })
                     UIManager:show(dialog)
                 end,
             })
@@ -231,7 +236,7 @@ function FanficMenu:onSearchTag(category)
     -- Show an input dialog to enter the fandom search query
     local searchDialog
     local bookmarkSetting = T("bookmarked%1s", category)
-    searchDialog = InputDialog:new{
+    searchDialog = InputDialog:new({
         title = T("Search for %1s tags on AO3", category),
         input = "",
         input_type = "text",
@@ -258,53 +263,67 @@ function FanficMenu:onSearchTag(category)
                             local menu_items = {}
                             for __, tag in ipairs(tags) do
                                 local isBookmarked = util.contains(bookmarks, tag.name)
-                                local displayText = isBookmarked and T("★ (%1) %2", tag.uses, tag.name) or T("(%1) %2", tag.uses, tag.name)
+                                local displayText = isBookmarked and T("★ (%1) %2", tag.uses, tag.name)
+                                    or T("(%1) %2", tag.uses, tag.name)
 
                                 table.insert(menu_items, {
                                     text = displayText,
                                     callback = function()
                                         local dialog
-                                        dialog = ButtonDialog:new{
+                                        dialog = ButtonDialog:new({
                                             title = displayText,
                                             buttons = {
                                                 {
-                                                {
-                                                    text = _("Browse Works"),
-                                                    callback = function()
-                                                        self:onBrowseByTag(tag.name)
-                                                        UIManager:close(dialog)
-                                                    end,
-                                                },
-                                                {
-                                                    text = _(not isBookmarked and T("Bookmark %1", category) or T("Unbookmark %1", category)),
-                                                    callback = function()
-                                                        -- Add the fandom to bookmarks
-                                                        if not isBookmarked then
-                                                            table.insert(bookmarks, tag.name)
-                                                            Config:saveSetting(bookmarkSetting , bookmarks)
-                                                            UIManager:show(InfoMessage:new{
-                                                                text = T("'%1' has been added to your bookmarks.", tag.name),
-                                                            })
-                                                        else
-                                                            for i, v in ipairs(bookmarks) do
-                                                                if v == tag.name then
-                                                                    table.remove(bookmarks, i)
-                                                                    break
+                                                    {
+                                                        text = _("Browse Works"),
+                                                        callback = function()
+                                                            self:onBrowseByTag(tag.name)
+                                                            UIManager:close(dialog)
+                                                        end,
+                                                    },
+                                                    {
+                                                        text = _(
+                                                            not isBookmarked and T("Bookmark %1", category)
+                                                            or T("Unbookmark %1", category)
+                                                        ),
+                                                        callback = function()
+                                                            -- Add the fandom to bookmarks
+                                                            if not isBookmarked then
+                                                                table.insert(bookmarks, tag.name)
+                                                                Config:saveSetting(bookmarkSetting, bookmarks)
+                                                                UIManager:show(
+                                                                    InfoMessage:new({
+                                                                        text = T(
+                                                                            "'%1' has been added to your bookmarks.",
+                                                                            tag.name
+                                                                        ),
+                                                                    })
+                                                                )
+                                                            else
+                                                                for i, v in ipairs(bookmarks) do
+                                                                    if v == tag.name then
+                                                                        table.remove(bookmarks, i)
+                                                                        break
+                                                                    end
                                                                 end
+                                                                Config:saveSetting(bookmarkSetting, bookmarks)
+                                                                UIManager:show(
+                                                                    InfoMessage:new({
+                                                                        text = T(
+                                                                            "'%1' has been removed from your bookmarks.",
+                                                                            tag.name
+                                                                        ),
+                                                                    })
+                                                                )
                                                             end
-                                                            Config:saveSetting(bookmarkSetting, bookmarks)
-                                                            UIManager:show(InfoMessage:new{
-                                                                text = T("'%1' has been removed from your bookmarks.", tag.name),
-                                                            })
-                                                        end
-                                                        UIManager:close(dialog)
-                                                        self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
-                                                        self.menuWidget:updateItems()
-                                                    end,
+                                                            UIManager:close(dialog)
+                                                            self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
+                                                            self.menuWidget:updateItems()
+                                                        end,
+                                                    },
                                                 },
-                                                }
-                                            }
-                                        }
+                                            },
+                                        })
                                         UIManager:show(dialog)
                                     end,
                                 })
@@ -316,7 +335,6 @@ function FanficMenu:onSearchTag(category)
 
                             UIManager:close(searchDialog)
 
-
                             if not tags then
                                 return
                             end
@@ -326,39 +344,37 @@ function FanficMenu:onSearchTag(category)
 
                             self.menuWidget:GoDownInMenu(T('"%1" %2 query results', query, category), refreshMenu())
                         end)
-                        UIManager:show(InfoMessage:new{
+                        UIManager:show(InfoMessage:new({
                             text = T("Downloading %1 info may take some time…", category),
                             timeout = 1,
-                        })
-                end,
+                        }))
+                    end,
                 },
             },
-        }
-    }
+        },
+    })
 
     UIManager:show(searchDialog)
     searchDialog:onShowKeyboard()
 end
 
 function FanficMenu:onBrowseByTag(selectedTag)
-
     -- Define available sorting options
     local sorting_options = {
-        { text = _("Sort by Author"), value = "authors_to_sort_on" },
-        { text = _("Sort by Title"), value = "title_to_sort_on" },
-        { text = _("Sort by Date Posted"), value = "created_at" },
+        { text = _("Sort by Author"),       value = "authors_to_sort_on" },
+        { text = _("Sort by Title"),        value = "title_to_sort_on" },
+        { text = _("Sort by Date Posted"),  value = "created_at" },
         { text = _("Sort by Date Updated"), value = "revised_at" },
-        { text = _("Sort by Word Count"), value = "word_count" },
-        { text = _("Sort by Hits"), value = "hits" },
-        { text = _("Sort by Kudos"), value = "kudos_count" },
-        { text = _("Sort by Comments"), value = "comments_count" },
-        { text = _("Sort by Bookmarks"), value = "bookmarks_count" },
+        { text = _("Sort by Word Count"),   value = "word_count" },
+        { text = _("Sort by Hits"),         value = "hits" },
+        { text = _("Sort by Kudos"),        value = "kudos_count" },
+        { text = _("Sort by Comments"),     value = "comments_count" },
+        { text = _("Sort by Bookmarks"),    value = "bookmarks_count" },
     }
 
     -- Create a menu for sorting options
     local menu_items = {}
     for __, option in ipairs(sorting_options) do
-
         table.insert(menu_items, {
             text = option.text,
             callback = function()
@@ -372,19 +388,23 @@ function FanficMenu:onBrowseByTag(selectedTag)
                         self.menuWidget,
                         ficResults,
                         fetchNextPage,
-                        function(fanfic) self.fanfic:UpdateFanfic(fanfic) end, -- Update callback
-                        function(fanficId, parentMenu) self.fanfic:DownloadFanfic(fanficId, parentMenu) end -- Download callback
+                        function(fanfic)
+                            self.fanfic:UpdateFanfic(fanfic)
+                        end, -- Update callback
+                        function(fanficId, parentMenu)
+                            self.fanfic:DownloadFanfic(fanficId, parentMenu)
+                        end -- Download callback
                     )
                 end)
-                UIManager:show(InfoMessage:new{
+                UIManager:show(InfoMessage:new({
                     text = _("Downloading works data may take some time…"),
                     timeout = 1,
-                })
+                }))
             end,
         })
     end
 
-    self.menuWidget:GoDownInMenu("Sort by...",menu_items)
+    self.menuWidget:GoDownInMenu("Sort by...", menu_items)
 end
 
 function FanficMenu:onViewDownloadedFanfics()
@@ -395,7 +415,7 @@ end
 
 function FanficMenu:onOpenSettings()
     local settings_options = {
-        {text = "AO3 URL", setting = "AO3_domain"}
+        { text = "AO3 URL", setting = "AO3_domain" },
     }
     local settings_menu_items = {}
 
@@ -405,33 +425,33 @@ function FanficMenu:onOpenSettings()
             callback = function()
                 -- Show an input dialog to update the setting
                 local inputDialog
-                inputDialog = InputDialog:new{
+                inputDialog = InputDialog:new({
                     title = T("Set value for '%1'", setting.text),
                     input = Config:readSetting(setting.setting),
                     input_type = "text",
                     buttons = {
                         {
-                        {
-                            text = _("Cancel"),
-                            callback = function()
-                                UIManager:close(inputDialog)
-                            end,
+                            {
+                                text = _("Cancel"),
+                                callback = function()
+                                    UIManager:close(inputDialog)
+                                end,
+                            },
+                            {
+                                text = _("Save"),
+                                is_enter_default = true,
+                                callback = function()
+                                    local newValue = inputDialog:getInputText()
+                                    Config:saveSetting(setting.setting, newValue)
+                                    UIManager:close(inputDialog)
+                                    UIManager:show(InfoMessage:new({
+                                        text = T("'%1' updated successfully.", setting.text),
+                                    }))
+                                end,
+                            },
                         },
-                        {
-                            text = _("Save"),
-                            is_enter_default = true,
-                            callback = function()
-                                local newValue = inputDialog:getInputText()
-                                Config:saveSetting(setting.setting, newValue)
-                                UIManager:close(inputDialog)
-                                UIManager:show(InfoMessage:new{
-                                    text = T("'%1' updated successfully.", setting.text),
-                                })
-                            end,
-                        },
-                        }
                     },
-                }
+                })
                 UIManager:show(inputDialog)
                 inputDialog:onShowKeyboard()
             end,
@@ -441,7 +461,4 @@ function FanficMenu:onOpenSettings()
     self.menuWidget:GoDownInMenu("Settings", settings_menu_items)
 end
 
-
-
 return FanficMenu
-
