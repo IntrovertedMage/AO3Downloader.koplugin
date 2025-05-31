@@ -99,6 +99,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                     break
                                 end
                             end
+                        elseif not fanfic.chapter_data or #fanfic.chapter_data == 0 and fanfic.read then
+                            fanfic_read = true
                         else
                             fanfic_read = false
                         end
@@ -110,6 +112,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                         if string.find(fanfic.chapters, "?") or chapter_count < chapter_total then
                             fanfic_complete = false
                         end
+
 
                         table.insert(submenu_items, {
                             text = T("%1 (%2) %3", fanfic_read and (not fanfic_complete) and "=" or  fanfic_read and fanfic_complete and "✓" or "  ", fanfic.chapters, fanfic.title),

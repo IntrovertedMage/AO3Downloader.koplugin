@@ -31,10 +31,6 @@ local function createConfig()
             settings:saveSetting("version", 1)
         end
 
-
-        self:onFlushSettings(settings)
-        settings:close()
-
         self:updateSettingsFile_1()
     end
 
@@ -51,6 +47,7 @@ local function createConfig()
         for setting, value in pairs(self.default_settings) do
             settings:readSetting(setting, value)
         end
+        self.updated = true
         self:onFlushSettings(settings)
         settings:close()
     end

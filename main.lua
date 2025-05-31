@@ -200,6 +200,10 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.published = metadata.published or fanfic.published
     fanfic.wordcount = metadata.wordcount or fanfic.wordcount
 
+    if #fanfic.chapter_data == 0 and not (metadata.chapterData == 0) then
+        fanfic.read = nil
+    end
+
     if fanfic.chapter_data then
         for idx, chapter in pairs(fanfic.chapter_data) do
             if metadata.chapterData[idx] then
@@ -209,6 +213,8 @@ function Fanfic:UpdateFanfic(fanfic)
     end
 
     fanfic.chapter_data = metadata.chapterData
+
+
 
     DownloadedFanfics.update(fanfic)
 

@@ -421,7 +421,14 @@ function AO3Downloader:getWorkMetadata(work_id)
     end
 
     if #chapterData == 0 then
-        table.insert(chapterData, { id = work_id, #chapterData + 1, name = title })
+        local single_chapter_title = root:select(".chapter.preface.group > h3.title")[1]
+
+        if single_chapter_title then
+            local content = single_chapter_title:getcontent()
+            local chapter_title = string.match(content, "</a>:%s*(.+)") or "Chapter 1"
+            local chapter_id = string.match(content, "/chapters/(%d+)")
+            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = "1. " .. chapter_title })
+        end
     end
 
     local tags = {}

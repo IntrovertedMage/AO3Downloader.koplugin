@@ -16,8 +16,7 @@ local FanficBrowser = {}
 function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback, downloadFanficCallback)
     -- Helper function to check if a fanfic is already downloaded
     local function isDownloaded(fanficId)
-        local downloaded_fanfics = DownloadedFanfics.getAll()
-        return downloaded_fanfics[tostring(fanficId)]
+        return DownloadedFanfics.checkIfStored(fanficId)
     end
 
     -- Helper function to normalize a field to always be a table
