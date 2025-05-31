@@ -89,6 +89,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                 callback = function()
                     -- Create the submenu for the selected fandom
                     local submenu_items = {}
+                    local fandom_fanfic_count = #fanfics
                     for __, fanfic in pairs(fanfics) do
                         local fanfic_read = true
 
@@ -291,7 +292,15 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                                             end
                                                                         end
                                                                         parentMenu:updateItems()
-                                                                        parentMenu:updateMenuBack(1, nil, refreshDownloadMenu(), nil)
+                                                                        local new_download_menu_items = refreshDownloadMenu()
+                                                                        parentMenu:updateMenuBack(1, nil, new_download_menu_items, nil)
+                                                                        fandom_fanfic_count = fandom_fanfic_count - 1
+                                                                        if fandom_fanfic_count == 0 then
+                                                                            parentMenu:onReturn()
+                                                                            if not new_download_menu_items or #new_download_menu_items == 0 then
+                                                                                parentMenu:onReturn()
+                                                                            end
+                                                                        end
                                                                         UIManager:close(confirmDialog)
 
                                                                     end,
