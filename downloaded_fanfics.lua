@@ -7,7 +7,6 @@ local DownloadedFanfics = {}
 local history_file_path = Paths.getHomeDirectory() .. "/fanfic_history.json"
 local downloaded_fanfics = {}
 
-
 -- From: http://lua-users.org/wiki/CopyTable
 local function deepcopy(orig, copies)
     copies = copies or {}
@@ -35,12 +34,11 @@ local function normalizeField(field)
     if type(field) == "string" then
         return { field } -- Convert single string to a table
     elseif type(field) == "table" then
-        return field -- Already a table
+        return field     -- Already a table
     else
-        return {} -- Default to an empty table
+        return {}        -- Default to an empty table
     end
 end
-
 
 -- Save the downloaded fanfic history to a file
 function DownloadedFanfics.save()
@@ -68,8 +66,6 @@ function DownloadedFanfics.updateDownloadFile_1()
     downloaded_fanfics = new_fanfics_set
 
     DownloadedFanfics.save()
-
-
 end
 
 -- Load the downloaded fanfic history from a file
@@ -109,20 +105,20 @@ end
 
 -- Add a new fanfic to the downloaded list
 function DownloadedFanfics.add(fanfic)
-    fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
+    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
     fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters) -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags) -- Ensure tags is a table
+    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
+    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     DownloadedFanfics.save()
 end
 
 -- Update an existing fanfic in the downloaded list
 function DownloadedFanfics.update(fanfic)
-    fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
+    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
     fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters) -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags) -- Ensure tags is a table
+    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
+    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     DownloadedFanfics.save()
 end
@@ -138,17 +134,16 @@ function DownloadedFanfics.delete(fanficId)
 end
 
 function DownloadedFanfics.markChapterAsRead(fanficId, chapter_id)
-        downloaded_fanfics[tostring(fanficId)].chapter_data[tostring(chapter_id)].read = true
-        DownloadedFanfics.save()
-        return deepcopy(downloaded_fanfics[fanficId])
+    downloaded_fanfics[tostring(fanficId)].chapter_data[chapter_id].read = true
+    DownloadedFanfics.save()
+    return deepcopy(downloaded_fanfics[tostring(fanficId)])
 end
 
 function DownloadedFanfics.markWorkAsRead(fanficId)
     downloaded_fanfics[tostring(fanficId)].read = true
     DownloadedFanfics.save()
-    return deepcopy(downloaded_fanfics[fanficId])
+    return deepcopy(downloaded_fanfics[tostring(fanficId)])
 end
-
 
 function DownloadedFanfics.checkIfStored(fanficId)
     return downloaded_fanfics[tostring(fanficId)]

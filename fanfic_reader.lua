@@ -91,12 +91,14 @@ function FanficReader:onFinishWork()
         text = "Finished work: " .. tostring(self.current_fanfic.title),
     }))
 
-    DownloadedFanfics.markWorkAsRead(self.current_fanfic.id)
+    self.current_fanfic = DownloadedFanfics.markWorkAsRead(self.current_fanfic.id)
 end
 
 function FanficReader:onPageUpdate(pageno)
     if self.is_showing then
         if ReaderUI.instance then
+            local logger = require("logger")
+            logger.dbg(self.current_fanfic)
             if #self.current_fanfic.chapter_data ~= 0 then
                 local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
                 if document_chapter_index > 1 and (document_chapter_index - 1) <= #self.current_fanfic.chapter_data and ReaderUI.instance.toc:isChapterEnd(pageno) then
@@ -105,7 +107,7 @@ function FanficReader:onPageUpdate(pageno)
             else
                 local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
                 if document_chapter_index == 2 and ReaderUI.instance.toc:isChapterEnd(pageno) then
-                    FanficReader:onFinishWork(document_chapter_index - 1)
+                    FanficReader:onFinishWork()
                 end
 
             end
