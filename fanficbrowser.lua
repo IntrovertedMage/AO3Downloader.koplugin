@@ -9,6 +9,7 @@ local _ = require("gettext")
 local util = require("util")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
+local logger = require("logger")
 
 local FanficBrowser = {}
 
@@ -16,7 +17,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
     -- Helper function to check if a fanfic is already downloaded
     local function isDownloaded(fanficId)
         local downloaded_fanfics = DownloadedFanfics.getAll()
-        return downloaded_fanfics[fanficId]
+        return downloaded_fanfics[tostring(fanficId)]
     end
 
     -- Helper function to normalize a field to always be a table
