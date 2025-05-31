@@ -1,5 +1,18 @@
-An unofficial KOReader plugin to download works from AO3, currently a work in progress, incomplete and so will have many bugs, use at your own risk
+An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy
 
+## Features
+- Browse and downlaod from AO3 by either a singular tag or a detailed filter
+- Download works by there id
+- Update and delete downloaded works from the download menu
+- Open downloaded works via the plugins menu to track read chapters and open works at certain chapters
+
+## Features I want to work on
+- Support using a AO3 account
+- Commenting and giving kudos to works right from the plugin
+- View all the works by a certain author
+- Show tag bookmarks in the filter tag search menus
+- Search by tags by both tapping on them in the fanfic browser menu and tapping the tags link within the epub itself
+  
 ## Screenshots
 ![Screenshot from 2025-04-14 17-52-39](https://github.com/user-attachments/assets/b87e13a7-ff8b-49ee-94df-650bfa9c5f43)
 ![Screenshot from 2025-04-14 17-52-48](https://github.com/user-attachments/assets/88d4d4fb-9b90-4fb6-9ca0-b4b4a56c7cc8)
