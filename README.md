@@ -1,10 +1,10 @@
 An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy
 
 ## Features
-- Browse and downlaod from AO3 by either a singular tag or a detailed filter
+- Browse and download from AO3 by either a singular tag or a detailed filter
 - Download works by there id
 - Update and delete downloaded works from the download menu
-- Open downloaded works via the plugins menu to track read chapters and open works at certain chapters
+- Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
 
 ## Features I want to work on
 - Support using a AO3 account
