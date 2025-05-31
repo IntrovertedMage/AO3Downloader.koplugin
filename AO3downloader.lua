@@ -98,6 +98,8 @@ local function performHttpsRequest(request)
             method = request.method or "GET",
             headers = request.headers,
             sink = request.sink,
+            protocol = "tlsv1_3", -- Explicitly set the protocol
+            options = "all",
         })
 
         -- Parse and store cookies from the response
