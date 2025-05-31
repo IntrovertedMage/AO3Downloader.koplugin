@@ -124,11 +124,11 @@ function Fanfic:DownloadFanfic(id, parentMenu)
         text = T(_("File saved to:\n%1\nWould you like to read the downloaded book now?"), BD.filepath(path)),
         ok_text = _("Read now"),
         ok_callback = function()
-            if parentMenu then
-                UIManager:close(parentMenu)
+            if self.menu.browse_window then
+                self.menu.browse_window:onClose()
             end
 
-            UIManager:close(self.menu)
+            self.menu:onClose()
             FanficReader:show({
                 fanfic_path = fanfic.path,
                 current_fanfic = fanfic,

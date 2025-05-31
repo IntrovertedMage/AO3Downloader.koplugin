@@ -31,7 +31,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         elseif type(field) == "table" then
             return field -- Already a table
         else
-            return {}    -- Default to an empty table
+            return {} -- Default to an empty table
         end
     end
 
@@ -73,8 +73,8 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                     callback = function()
                                         UIManager:scheduleIn(1, function()
                                             updateFanficCallback(downloadedFanfic)
-                                            UIManager:close(dialog)
                                         end)
+                                        UIManager:close(dialog)
                                         UIManager:show(InfoMessage:new({
                                             text = _("Downloading work may take some time…"),
                                             timeout = 1,
@@ -84,7 +84,9 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                 {
                                     text = _("Open"),
                                     callback = function()
-                                        UIManager:close(self.browse_window)
+                                        UIManager:close(dialog)
+                                        self.browse_window:onClose()
+                                        self.parentMenu:onClose()
                                         FanficReader:show({
                                             fanfic_path = downloadedFanfic.path,
                                             current_fanfic = downloadedFanfic,
@@ -103,7 +105,10 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                     })
                     UIManager:show(dialog)
                 else
-                    if Config:readSetting("show_adult_warning") and (v.rating == "Explicit" or v.rating == "Mature" or v.rating == "Not Rated") then
+                    if
+                        Config:readSetting("show_adult_warning")
+                        and (v.rating == "Explicit" or v.rating == "Mature" or v.rating == "Not Rated")
+                    then
                         self:showAdultWarningDialog(v)
                     else
                         self:showDownloadDialog(v)
@@ -128,9 +133,9 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         table.insert(kv_pairs, {
             "     " .. "Relationships:",
             "("
-            .. v.category
-            .. ") "
-            .. (#v.relationships > 0 and table.concat(v.relationships, ", ") or "No relationships available"),
+                .. v.category
+                .. ") "
+                .. (#v.relationships > 0 and table.concat(v.relationships, ", ") or "No relationships available"),
         })
         table.insert(kv_pairs, {
             "     " .. "Characters:",
@@ -159,6 +164,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
     return kv_pairs
 end
+
 function FanficBrowser:showDownloadDialog(fanfic)
     local confirmDialog
     confirmDialog = ButtonDialog:new({
@@ -166,13 +172,13 @@ function FanficBrowser:showDownloadDialog(fanfic)
         buttons = {
             {
                 {
-                    text = ("No"),
+                    text = "No",
                     callback = function()
                         UIManager:close(confirmDialog)
                     end,
                 },
                 {
-                    text = ("Yes"),
+                    text = "Yes",
                     callback = function()
                         UIManager:scheduleIn(1, function()
                             self.downloadFanficCallback(tonumber(fanfic.id), self.browse_window)
@@ -198,21 +204,20 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
         buttons = {
             {
                 {
-                    text = ("Cancel"),
+                    text = "Cancel",
                     callback = function()
                         UIManager:close(warningDialog)
                     end,
                 },
                 {
-                    text = ("Continue"),
+                    text = "Continue",
                     callback = function()
                         UIManager:close(warningDialog)
                         self:showDownloadDialog(fanfic)
                     end,
-                }
-            }
-
-        }
+                },
+            },
+        },
     })
     UIManager:show(warningDialog)
 end
@@ -221,6 +226,7 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
     self.ui = ui
     self.updateFanficCallback = updateFanficCallback
     self.downloadFanficCallback = downloadFanficCallback
+    self.parentMenu = parentMenu
 
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
     local total_fic_count = ficResults.total
@@ -268,9 +274,10 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             parentMenu = selfself.parentMenu,
             preventParentClose = true,
         })
+        self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
-        selfself:onClose()
     end
 
     BrowseWindow.reload = function(selfself)
@@ -289,19 +296,24 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             parentMenu = selfself.parentMenu,
             preventParentClose = true,
         })
+        self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
-        selfself:onClose()
     end
 
-    BrowseWindow.onClose = function(self)
-        -- Only close the parent menu if explicitly required
-        if self.parentMenu and not self.preventParentClose then
-            self.parentMenu:onClose()
+
+    BrowseWindow.setMaximumPageValueCount = function(selfself, amount)
+        if selfself.items_per_page > amount then
+            selfself.items_per_page = amount
+            selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
         end
-        KeyValuePage.onClose(self)
+        selfself:_populateItems()
     end
 
+
+
+    self.items_per_fic = 14
     -- Create the KeyValuePage
     self.browse_window = BrowseWindow:new({
         title = T("(%1) Tap fanfic title to download", total_fic_count or "ERROR"),
@@ -314,6 +326,9 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         preventParentClose = true,
         show_page = 1,
     })
+
+    self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+    self.parentMenu.browse_window = self.browse_window
 
     UIManager:show(self.browse_window)
 end
