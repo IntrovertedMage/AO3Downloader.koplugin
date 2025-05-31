@@ -7,10 +7,8 @@ local UIManager = require("ui/uimanager")
 local InputDialog = require("ui/widget/inputdialog")
 local Downloader = require("AO3downloader")
 local InfoMessage = require("ui/widget/infomessage")
-local Paths = require("FanficPaths")
 local ConfirmBox = require("ui/widget/confirmbox")
 local BD = require("ui/bidi")
-local lfs = require("libs/libkoreader-lfs")
 local DownloadedFanfics = require("downloaded_fanfics")
 local FanficBrowser = require("fanficbrowser")
 local FanficMenu = require("fanfic_menu")
@@ -22,8 +20,6 @@ local Fanfic = WidgetContainer:extend{
 }
 
 function Fanfic:init()
-    lfs.mkdir(Paths:getHomeDirectory())
-    lfs.mkdir(Paths:getHomeDirectory().."/Downloads/")
     if self.ui.name == "ReaderUI" then
         FanficReader:initializeFromReaderUI(self.ui)
     else

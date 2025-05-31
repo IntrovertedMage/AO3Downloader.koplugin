@@ -39,7 +39,6 @@ function FanficMenuWidget:onReturn()
     if self.lock_return then
         return
     end
-    logger.dbg(self.paths[#self.paths])
     local path = self.paths[#self.paths]
     if path then
         self:switchItemTable(path.title, path.items, -1, -1, path.subtitle)

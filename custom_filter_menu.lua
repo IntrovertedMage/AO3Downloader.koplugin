@@ -703,14 +703,8 @@ end
 function CustomFilterMenu:OverwriteFilter(filter)
     local filters = Config:readSetting("saved_filters", {})
 
-    for idx, c_filter in pairs(filters) do
-        if c_filter.title == filter.title then
-            table.remove(filters, idx)
-            break
-        end
-    end
 
-    table.insert(filters, 1, { title = filter.title, parameters = self.filter })
+    filters[filter.title] =  { title = filter.title, parameters = self.filter }
     Config:saveSetting("saved_filters", filters)
     UIManager:show(InfoMessage:new({
         text = 'Filter "' .. filter.title .. '" has been overwritten',
@@ -741,19 +735,9 @@ function CustomFilterMenu:SaveFilters()
                             return
                         end
 
-                        local comparisonFunction = function(tablevalue, value)
-                            return tablevalue["title"] == value
-                        end
 
                         local filters = Config:readSetting("saved_filters", {})
-                        local alreadyUsed = false
-
-                        for _, v in ipairs(filters) do
-                            if comparisonFunction(v, value) then
-                                alreadyUsed = true
-                                break
-                            end
-                        end
+                        local alreadyUsed = filters[value]
 
                         if alreadyUsed then
                             UIManager:show(InfoMessage:new({
@@ -763,7 +747,7 @@ function CustomFilterMenu:SaveFilters()
                         end
 
                         local newFilter = { title = value, parameters = self.filter }
-                        table.insert(filters, 1, newFilter)
+                        filters[newFilter.title] = newFilter
                         Config:saveSetting("saved_filters", filters)
                         UIManager:show(InfoMessage:new({
                             text = 'Filter "' .. value .. '" has been saved',

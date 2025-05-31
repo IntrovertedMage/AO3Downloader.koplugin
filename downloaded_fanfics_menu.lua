@@ -32,15 +32,15 @@ end
 function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
     local function refreshDownloadMenu()
         local downloaded_fanfics = DownloadedFanfics.getAll()
-        if #downloaded_fanfics == 0 then
+        if next(downloaded_fanfics) == nil then
             UIManager:show(InfoMessage:new({
-                text = _("No fanfics downloaded yet."),
+                text = "No fanfics downloaded yet.",
             }))
             return
         end
 
         -- Normalize relationships, characters, and tags for each fanfic
-        for _, fanfic in ipairs(downloaded_fanfics) do
+        for _, fanfic in pairs(downloaded_fanfics) do
             fanfic.relationships = normalizeField(fanfic.relationships)
             fanfic.characters = normalizeField(fanfic.characters)
             fanfic.tags = normalizeField(fanfic.tags)
@@ -49,9 +49,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
         -- Group fanfics by fandom and track the most recent `last_accessed` timestamp
         local fandom_groups = {}
         local fandom_last_accessed = {}
-        for _, fanfic in ipairs(downloaded_fanfics) do
+        for __, fanfic in pairs(downloaded_fanfics) do
             local fandoms = fanfic.fandoms or { _("Unknown Fandom") }
-            for _, fandom in ipairs(fandoms) do
+            for __, fandom in pairs(fandoms) do
                 if not fandom_groups[fandom] then
                     fandom_groups[fandom] = {}
                     fandom_last_accessed[fandom] = fanfic.last_accessed or "0000-00-00 00:00:00"
@@ -75,7 +75,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
 
         -- Create the main menu with submenus for each fandom
         local menu_items = {}
-        for __, fandom in ipairs(sorted_fandoms) do
+        for __, fandom in pairs(sorted_fandoms) do
             local fanfics = fandom_groups[fandom]
 
             -- Sort fanfics in each fandom by `last_accessed` in descending order
@@ -89,7 +89,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                 callback = function()
                     -- Create the submenu for the selected fandom
                     local submenu_items = {}
-                    for __, fanfic in ipairs(fanfics) do
+                    for __, fanfic in pairs(fanfics) do
                         local fanfic_read = true
 
                         if fanfic.chapter_data and #fanfic.chapter_data > 0 then
@@ -336,8 +336,13 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
         return menu_items
     end
 
+
+    local download_menu_items = refreshDownloadMenu()
+    if not download_menu_items then
+        return
+    end
     -- Create and show the main menu
-    parentMenu:GoDownInMenu("Downloaded Works by Fandom", refreshDownloadMenu())
+    parentMenu:GoDownInMenu("Downloaded Works by Fandom", download_menu_items)
 end
 
 function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)

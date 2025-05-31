@@ -1,6 +1,9 @@
 
 local DataStorage = require("datastorage")
 local logger = require("logger")
+local DownloadedFanfics = require("downloaded_fanfics")
+local util = require("frontend/util")
+local Paths = require("FanficPaths")
 
 local config_instance = nil
 
@@ -21,12 +24,26 @@ local function createConfig()
 
     function config:init()
         local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
-        self:setDefault()
-        if next(settings.data) == nil then
-            self.updated = true -- first run, force flush
+        if not util.fileExists(DataStorage:getSettingsDir() .. "/fanfic.lua") then
+            config:setup()
+        elseif settings:readSetting("version") == nil then
+            config:updateSettingsFile_1()
+            settings:saveSetting("version", 1)
         end
+
+
         self:onFlushSettings(settings)
         settings:close()
+
+        self:updateSettingsFile_1()
+    end
+
+    function config:setup()
+        util.makePath(Paths:getHomeDirectory())
+        util.makePath(Paths:getHomeDirectory().."/Downloads/")
+
+        self:setDefault()
+
     end
 
     function config:setDefault()
@@ -36,6 +53,23 @@ local function createConfig()
         end
         self:onFlushSettings(settings)
         settings:close()
+    end
+
+    function config:updateSettingsFile_1()
+        -- update filter menu
+        local filter_set = config:readSetting("saved_filters", {} )
+        local new_filter_set = {}
+
+        for __, filter in pairs(filter_set) do
+            logger.dbg(filter)
+            new_filter_set[filter.title] = filter
+        end
+
+        config:saveSetting("saved_filters", new_filter_set)
+
+        -- update chapter menu
+        DownloadedFanfics.updateDownloadFile_1()
+
     end
 
     function config:readSetting(key, default)
