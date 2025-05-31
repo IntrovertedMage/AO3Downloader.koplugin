@@ -1,4 +1,5 @@
-An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy
+An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy.
+The plugins menu is found under the search tab in the top menu on the second page only while the filemanager is open.
 
 ## Features
 - Browse and download from AO3 by either a singular tag or a detailed filter
