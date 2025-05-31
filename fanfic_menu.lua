@@ -415,50 +415,105 @@ end
 
 function FanficMenu:onOpenSettings()
     local settings_options = {
-        { text = "AO3 URL", setting = "AO3_domain" },
+        { text = "AO3 URL", setting = "AO3_domain" , type = "String"},
+        { text = "Show adult work warning", setting = "show_adult_warning" , type = "Bool"},
     }
-    local settings_menu_items = {}
+    local function generateMenuItems()
 
-    for __, setting in ipairs(settings_options) do
-        table.insert(settings_menu_items, {
-            text = setting.text,
-            callback = function()
-                -- Show an input dialog to update the setting
-                local inputDialog
-                inputDialog = InputDialog:new({
-                    title = T("Set value for '%1'", setting.text),
-                    input = Config:readSetting(setting.setting),
-                    input_type = "text",
-                    buttons = {
-                        {
-                            {
-                                text = _("Cancel"),
-                                callback = function()
-                                    UIManager:close(inputDialog)
-                                end,
+        local settings_menu_items = {}
+
+        for __, setting in ipairs(settings_options) do
+            local menu_item
+            if setting.type == "String" then
+                menu_item = {
+                    text = setting.text .. ": " .. Config:readSetting(setting.setting, ""),
+                    callback = function()
+                        -- Show an input dialog to update the setting
+                        local inputDialog
+                        inputDialog = InputDialog:new({
+                            title = T("Set value for '%1'", setting.text),
+                            input = Config:readSetting(setting.setting),
+                            input_type = "text",
+                            buttons = {
+                                {
+                                    {
+                                        text = _("Cancel"),
+                                        callback = function()
+                                            UIManager:close(inputDialog)
+                                        end,
+                                    },
+                                    {
+                                        text = _("Save"),
+                                        is_enter_default = true,
+                                        callback = function()
+                                            local newValue = inputDialog:getInputText()
+                                            Config:saveSetting(setting.setting, newValue)
+                                            UIManager:close(inputDialog)
+                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
+                                            self.menuWidget:updateItems()
+                                            UIManager:show(InfoMessage:new({
+                                                text = T("'%1' updated successfully.", setting.text),
+                                            }))
+                                        end,
+                                    },
+                                },
                             },
-                            {
-                                text = _("Save"),
-                                is_enter_default = true,
-                                callback = function()
-                                    local newValue = inputDialog:getInputText()
-                                    Config:saveSetting(setting.setting, newValue)
-                                    UIManager:close(inputDialog)
-                                    UIManager:show(InfoMessage:new({
-                                        text = T("'%1' updated successfully.", setting.text),
-                                    }))
-                                end,
+                        })
+                        UIManager:show(inputDialog)
+                        inputDialog:onShowKeyboard()
+                    end,
+                }
+            elseif setting.type == "Bool" then
+
+                menu_item = {
+                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) and "On"  or "Off"),
+                    callback = function()
+                        -- Show an input dialog to update the setting
+                        local buttonDialog
+                        buttonDialog = ButtonDialog:new({
+                            buttons = {
+                                {
+                                    {
+                                        text = "On",
+                                        callback = function()
+                                            Config:saveSetting(setting.setting, true)
+                                            UIManager:close(buttonDialog)
+                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
+                                            self.menuWidget:updateItems()
+                                            UIManager:show(InfoMessage:new({
+                                                text = T("'%1' updated successfully.", setting.text),
+                                            }))
+                                        end,
+                                    },
+                                },
+                                {
+                                    {
+                                        text = "Off",
+                                        is_enter_default = true,
+                                        callback = function()
+                                            Config:saveSetting(setting.setting, false)
+                                            UIManager:close(buttonDialog)
+                                            menu_item.text = setting.text .. ": Off"
+                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
+                                            self.menuWidget:updateItems()
+                                            UIManager:show(InfoMessage:new({
+                                                text = T("'%1' updated successfully.", setting.text),
+                                            }))
+                                        end,
+                                    },
+                                },
                             },
-                        },
-                    },
-                })
-                UIManager:show(inputDialog)
-                inputDialog:onShowKeyboard()
-            end,
-        })
+                        })
+                        UIManager:show(buttonDialog)
+                    end,
+                }
+            end
+            table.insert(settings_menu_items, menu_item)
+        end
+        return settings_menu_items
     end
 
-    self.menuWidget:GoDownInMenu("Settings", settings_menu_items)
+    self.menuWidget:GoDownInMenu("Settings", generateMenuItems())
 end
 
 return FanficMenu

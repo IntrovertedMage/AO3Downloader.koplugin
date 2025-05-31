@@ -8,16 +8,32 @@ local function createConfig()
     local config = {}
 
     config.default_settings = {
-        AO3_domain = "https://archiveofourown.org"
+        AO3_domain = "https://archiveofourown.org",
+        show_adult_warning = true,
+        bookmarkedFandoms = {
+            "原神 | Genshin Impact (Video Game)",
+            "Miraculous Ladybug",
+            "Marvel Cinematic Universe",
+            "Star Wars - All Media Types",
+        }
+
     }
 
     function config:init()
         local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        self:setDefault()
         if next(settings.data) == nil then
             self.updated = true -- first run, force flush
         end
-        settings:readSetting("AO3_domain", self.default_settings.AO3_domain)
-        settings:readSetting("bookmarkedFandoms", self.defaultFandoms)
+        self:onFlushSettings(settings)
+        settings:close()
+    end
+
+    function config:setDefault()
+        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        for setting, value in pairs(self.default_settings) do
+            settings:readSetting(setting, value)
+        end
         self:onFlushSettings(settings)
         settings:close()
     end
@@ -38,19 +54,6 @@ local function createConfig()
         self:onFlushSettings(settings)
         settings:close()
     end
-
-    function config:getFandoms()
-        local fandoms = self.settings:readSetting("bookmarkedFandoms", {})
-        return fandoms
-    end
-
-
-    config.defaultFandoms = {
-        [1] = "原神 | Genshin Impact (Video Game)",
-        [2] = "Miraculous Ladybug",
-        [3] = "Marvel Cinematic Universe",
-        [4] = "Star Wars - All Media Types",
-    }
 
 
     function config:onFlushSettings(settings)

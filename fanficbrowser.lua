@@ -4,6 +4,7 @@ local UIManager = require("ui/uimanager")
 local DownloadedFanfics = require("downloaded_fanfics")
 local InfoMessage = require("ui/widget/infomessage")
 local FanficReader = require("fanfic_reader")
+local Config = require("config")
 local _ = require("gettext")
 local util = require("util")
 local FFIUtil = require("ffi/util")
@@ -15,8 +16,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
     -- Helper function to check if a fanfic is already downloaded
     local function isDownloaded(fanficId)
         local downloaded_fanfics = DownloadedFanfics.getAll()
-        for _, fanfic in ipairs(downloaded_fanfics) do
-            if tostring(fanfic.id) == tostring(fanficId) then
+        for _, fanfic in ipairs(downloaded_fanfics) do if tostring(fanfic.id) == tostring(fanficId) then
                 return fanfic -- Return the fanfic object if found
             end
         end
@@ -92,6 +92,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                         FanficReader:show({
                                             fanfic_path = downloadedFanfic.path,
                                             current_fanfic = downloadedFanfic,
+                                            chapter_opening_at = nil,
                                         })
                                     end,
                                 },
@@ -106,36 +107,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                     })
                     UIManager:show(dialog)
                 else
-                    -- Show confirmation dialog before downloading
-                    local confirmDialog
-                    confirmDialog = ButtonDialog:new({
-                        title = T("Would you like to download the work: %1 by %2?", v.title, v.author),
-                        buttons = {
-                            {
-                                {
-                                    text = _("No"),
-                                    callback = function()
-                                        UIManager:close(confirmDialog)
-                                    end,
-                                },
-                                {
-                                    text = _("Yes"),
-                                    callback = function()
-                                        UIManager:scheduleIn(1, function()
-                                            downloadFanficCallback(tonumber(v.id), self.browse_window)
-                                            self.browse_window:reload()
-                                        end)
-                                        UIManager:show(InfoMessage:new({
-                                            text = _("Downloading work may take some time…"),
-                                            timeout = 1,
-                                        }))
-                                        UIManager:close(confirmDialog)
-                                    end,
-                                },
-                            },
-                        },
-                    })
-                    UIManager:show(confirmDialog)
+                    if Config:readSetting("show_adult_warning") and (v.rating == "Explicit" or v.rating == "Mature" or v.rating == "Not Rated") then
+                        self:showAdultWarningDialog(v)
+                    else
+                        self:showDownloadDialog(v)
+                    end
                 end
             end,
         }
@@ -153,23 +129,17 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             kv_pairs,
             { "     " .. "Warnings:", #v.warnings > 0 and table.concat(v.warnings, ", ") or "No warnings available" }
         )
-        table.insert(
-            kv_pairs,
-            {
-                "     " .. "Relationships:",
-                "("
-                .. v.category
-                .. ") "
-                .. (#v.relationships > 0 and table.concat(v.relationships, ", ") or "No relationships available"),
-            }
-        )
-        table.insert(
-            kv_pairs,
-            {
-                "     " .. "Characters:",
-                #v.characters > 0 and table.concat(v.characters, ", ") or "No characters available",
-            }
-        )
+        table.insert(kv_pairs, {
+            "     " .. "Relationships:",
+            "("
+            .. v.category
+            .. ") "
+            .. (#v.relationships > 0 and table.concat(v.relationships, ", ") or "No relationships available"),
+        })
+        table.insert(kv_pairs, {
+            "     " .. "Characters:",
+            #v.characters > 0 and table.concat(v.characters, ", ") or "No characters available",
+        })
         table.insert(
             kv_pairs,
             { "     " .. "Other Tags:", #v.tags > 0 and table.concat(v.tags, ", ") or "No tags available" }
@@ -193,9 +163,69 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
     return kv_pairs
 end
+function FanficBrowser:showDownloadDialog(fanfic)
+    local confirmDialog
+    confirmDialog = ButtonDialog:new({
+        title = T("Would you like to download the work: %1 by %2?", fanfic.title, fanfic.author),
+        buttons = {
+            {
+                {
+                    text = ("No"),
+                    callback = function()
+                        UIManager:close(confirmDialog)
+                    end,
+                },
+                {
+                    text = ("Yes"),
+                    callback = function()
+                        UIManager:scheduleIn(1, function()
+                            self.downloadFanficCallback(tonumber(fanfic.id), self.browse_window)
+                            self.browse_window:reload()
+                        end)
+                        UIManager:show(InfoMessage:new({
+                            text = _("Downloading work may take some time…"),
+                            timeout = 1,
+                        }))
+                        UIManager:close(confirmDialog)
+                    end,
+                },
+            },
+        },
+    })
+    UIManager:show(confirmDialog)
+end
+
+function FanficBrowser:showAdultWarningDialog(fanfic)
+    local warningDialog
+    warningDialog = ButtonDialog:new({
+        title = "This work could have adult content. If you continue, you have agreed that you are willing to see such content",
+        buttons = {
+            {
+                {
+                    text = ("Cancel"),
+                    callback = function()
+                        UIManager:close(warningDialog)
+                    end,
+                },
+                {
+                    text = ("Continue"),
+                    callback = function()
+                        UIManager:close(warningDialog)
+                        self:showDownloadDialog(fanfic)
+                    end,
+                }
+            }
+
+        }
+    })
+    UIManager:show(warningDialog)
+end
 
 function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback)
     self.ui = ui
+    self.updateFanficCallback = updateFanficCallback
+    self.downloadFanficCallback = downloadFanficCallback
+
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
     local total_fic_count = ficResults.total
     ficResults.total = nil
@@ -227,7 +257,6 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         -- Add new works to loaded fanfics table
         for k, v in pairs(newFics) do
             table.insert(self.fanfics_loaded, v)
-
         end
 
         -- Update the total number of pages
