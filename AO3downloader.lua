@@ -1,14 +1,12 @@
 local htmlparser = require("htmlparser")
 htmlparser_looplimit = 1000000000
 local logger = require("logger")
-local ssl = require("ssl")
 local https = require("ssl.https") -- Use luasec for HTTPS requests
 local ltn12 = require("ltn12")
 local Paths = require("FanficPaths")
-local Config = require("config")
+local Config = require("fanfic_config")
 local socketutil = require("socketutil")
 local socket = require("socket")
-ssl.debug = true
 local util = require("util")
 
 local AO3Downloader = {}
@@ -48,9 +46,7 @@ end
 
 local function setCookies(responseHeaders)
     if responseHeaders["set-cookie"] then
-        logger.dbg("cookies: " .. responseHeaders["set-cookie"])
         for key, value in string.gmatch(responseHeaders["set-cookie"], "([^=;%s]+)=([^;]*)") do
-            logger.dbg("cookie: " .. key .. "," .. value)
             if key and value then
                 cookies[key] = value
             end
@@ -102,8 +98,6 @@ local function performHttpsRequest(request)
             method = request.method or "GET",
             headers = request.headers,
             sink = request.sink,
-            protocol = "tlsv1_3", -- Explicitly set the protocol
-            options = "all",
         })
 
         -- Parse and store cookies from the response

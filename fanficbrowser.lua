@@ -4,12 +4,11 @@ local UIManager = require("ui/uimanager")
 local DownloadedFanfics = require("downloaded_fanfics")
 local InfoMessage = require("ui/widget/infomessage")
 local FanficReader = require("fanfic_reader")
-local Config = require("config")
+local Config = require("fanfic_config")
 local _ = require("gettext")
 local util = require("util")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
-local logger = require("logger")
 
 local FanficBrowser = {}
 

@@ -1,4 +1,4 @@
--- From rakuyomi.koplugin
+-- Based upon code found in rakuyomi.koplugin maintained by hanatsumi , https://github.com/hanatsumi/rakuyomi
 local DataStorage = require("datastorage")
 local ffiutil = require("ffi/util")
 

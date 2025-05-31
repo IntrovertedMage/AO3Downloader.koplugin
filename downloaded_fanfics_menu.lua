@@ -1,4 +1,3 @@
-local Menu = require("ui/widget/menu")
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local TextViewer = require("ui/widget/textviewer")

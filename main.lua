@@ -4,7 +4,6 @@ local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local logger = require("logger")
 local UIManager = require("ui/uimanager")
-local InputDialog = require("ui/widget/inputdialog")
 local Downloader = require("AO3downloader")
 local InfoMessage = require("ui/widget/infomessage")
 local ConfirmBox = require("ui/widget/confirmbox")

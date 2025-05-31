@@ -1,8 +1,6 @@
 local json = require("dkjson")
 local Paths = require("FanficPaths")
 local logger = require("logger")
-local DataStorage = require("datastorage")
-local util = require("util")
 
 local DownloadedFanfics = {}
 
