@@ -28,7 +28,7 @@ local FanficMenuWidget = Menu:extend({
     is_popout = false,
     is_borderless = true,
     paths = nil,
-    title = _("Fanfiction downloader"),
+    title = "AO3 downloader",
     subtitle = "",
     lock_return = false,
 })
@@ -72,7 +72,7 @@ local FanficMenu = {}
 function FanficMenu:show(fanfic)
     self.fanfic = fanfic
     self.menuWidget = FanficMenuWidget:new({
-        title = _("Fanfiction downloader"),
+        title = _("AO3 downloader"),
         item_table = {
             {
                 text = "\u{f002} Search and download works from AO3",

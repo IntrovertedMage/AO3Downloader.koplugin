@@ -14,7 +14,7 @@ local FanficMenu = require("fanfic_menu")
 local FanficReader = require("fanfic_reader")
 
 local Fanfic = WidgetContainer:extend{
-    name = "Fanfic downloader",
+    name = "AO3 downloader",
     is_doc_only = false,
 }
 
@@ -32,7 +32,7 @@ end
 function Fanfic:addToMainMenu(menu_items)
     if self.ui.file_chooser then
         menu_items.fanfic = {
-            text = _("Fanfiction downloader"),
+            text = _("AO3 Downloader"),
             sorting_hint = "search",
             callback = function()
                 self.menu = FanficMenu:show(self)
@@ -120,7 +120,7 @@ function Fanfic:DownloadFanfic(id, parentMenu)
 
     -- Show confirmation dialog
     UIManager:show(ConfirmBox:new{
-        text = T(_("File saved to:\n%1\nWould you like to read the downloaded book now?"), BD.filepath(path)),
+        text = T(_("File saved to:\n%1\nWould you like to read the downloaded work now?"), BD.filepath(path)),
         ok_text = _("Read now"),
         ok_callback = function()
             if self.menu.browse_window then
