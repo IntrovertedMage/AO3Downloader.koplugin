@@ -13,6 +13,7 @@ local function createConfig()
     config.default_settings = {
         AO3_domain = "https://archiveofourown.org",
         show_adult_warning = true,
+        version = 1,
         bookmarkedFandoms = {
             "原神 | Genshin Impact (Video Game)",
             "Miraculous Ladybug",
@@ -23,12 +24,12 @@ local function createConfig()
     }
 
     function config:init()
-        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
         if not util.fileExists(DataStorage:getSettingsDir() .. "/fanfic.lua") then
             config:setup()
-        elseif settings:readSetting("version") == nil then
+        end
+
+        if config:readSetting("version") == nil then
             config:updateSettingsFile_1()
-            settings:saveSetting("version", 1)
         end
 
         self:updateSettingsFile_1()
@@ -66,6 +67,7 @@ local function createConfig()
 
         -- update chapter menu
         DownloadedFanfics.updateDownloadFile_1()
+        config:saveSetting("version", 1)
 
     end
 
