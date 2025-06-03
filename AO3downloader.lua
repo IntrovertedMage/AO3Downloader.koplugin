@@ -23,6 +23,16 @@ local function loadCookiesFromConfig()
         cookies = savedCookies
     end
 end
+local function get_default_headers()
+    return {
+        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
+        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ["Accept-Language"] = "en-US,en;q=0.5",
+        ["Sec-GPC"] = 1,
+        ["Connection"] = "keep-alive",
+        ["DNT"] = "1", -- Do Not Track
+    }
+end
 
 local function getAO3URL()
     return Config:readSetting("AO3_domain")
@@ -549,13 +559,8 @@ function AO3Downloader:downloadEpub(link, filename)
         return false
     end
 
-    local headers = {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "application/epub+zip",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
-    }
+    local headers = get_default_headers()
+    headers["Accept"] = "application/epub+zip"
 
     local request = {
         url = link,
@@ -599,13 +604,8 @@ function AO3Downloader:searchFic(parameters, page)
     local url = string.format("%s/works?commit=Sort+and+Filter&%s", getAO3URL(), queryString)
     local response_body = {}
 
-    local headers = {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
-    }
+
+    local headers = get_default_headers()
 
     logger.dbg("Starting search request to:", url)
 
@@ -640,11 +640,8 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
     local encoded_tag_name = tag_name
         :gsub("/", "*s*") -- Replace / with */*
         :gsub(" & ", "*a*")
-        :gsub(" ", "%%20")
-        :gsub("|", "%%7C")
-        :gsub("%(", "%%28")
-        :gsub("%)", "%%29")
 
+    encoded_tag_name = urlEncode(encoded_tag_name)
     -- Construct the URL
     local url = string.format(
         "%s/tags/%s/works?page=%d&work_search[sort_column]=%s",
@@ -657,13 +654,7 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
     logger.dbg("Starting search request to:", url)
 
     local response_body = {}
-    local headers = {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
-    }
+    local headers = get_default_headers()
 
     local request = {
         url = url,
@@ -711,13 +702,7 @@ function AO3Downloader:searchForTag(query, type)
     logger.dbg("Starting fandom search request to:", url)
 
     local response_body = {}
-    local headers = {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
-    }
+    local headers = get_default_headers()
 
     local request = {
         url = url,
