@@ -25,20 +25,18 @@ local function createConfig()
 
     function config:init()
         if not util.fileExists(DataStorage:getSettingsDir() .. "/fanfic.lua") then
-            config:setup()
+            self:setup()
         end
 
-        if config:readSetting("version") == nil then
-            config:updateSettingsFile_1()
+        if self:readSetting("version") == nil then
+            self:updateSettingsFile_1()
         end
     end
 
     function config:setup()
         util.makePath(Paths:getHomeDirectory())
         util.makePath(Paths:getHomeDirectory().."/Downloads/")
-
         self:setDefault()
-
     end
 
     function config:setDefault()
