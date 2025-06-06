@@ -31,8 +31,6 @@ local function createConfig()
         if config:readSetting("version") == nil then
             config:updateSettingsFile_1()
         end
-
-        self:updateSettingsFile_1()
     end
 
     function config:setup()
