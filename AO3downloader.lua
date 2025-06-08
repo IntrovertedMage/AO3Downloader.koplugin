@@ -421,7 +421,7 @@ function SessionManager:GetSessionStatus()
     local response, status, response_headers = performHttpsRequest(request, 1)
 
     if not response then
-        logger.dbg("Failed to initialize session. Status:", status or "unknown error")
+        logger.dbg("Failed to get session status. Status:", status or "unknown error")
         return false
     end
 
@@ -431,10 +431,10 @@ function SessionManager:GetSessionStatus()
     if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
         logger.dbg("Session: logged in")
         local username = body_content:match('<a href="/users/([%w_]+)"')
-        return true, username
+        return true, true, username
     else
         logger.dbg("Session: logged out")
-        return false, nil
+        return true, false, nil
     end
 end
 
@@ -1013,7 +1013,7 @@ function AO3Downloader:searchForTag(query, type)
 
     if not response then
         logger.dbg("Fandom search request failed. Status:", status or "unknown error")
-        return nil, "Fandom search request failed"
+        return false, nil, "Fandom search request failed"
     end
 
     local body = table.concat(response_body)
@@ -1044,7 +1044,7 @@ function AO3Downloader:searchForTag(query, type)
         end
     end
 
-    return fandoms
+    return true, fandoms
 end
 
 function AO3Downloader:login(username, password)

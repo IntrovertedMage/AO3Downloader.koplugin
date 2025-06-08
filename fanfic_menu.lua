@@ -135,9 +135,12 @@ function FanficMenu:refreshAccountManagementMenu()
 end
 
 function FanficMenu:onAccountManagementMenu()
-    self.logged_in, self.username = self.fanfic:checkLoggedIn()
+    local success
+    success, self.logged_in, self.username = self.fanfic:checkLoggedIn()
 
-    self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
+    if success then
+        self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
+    end
 end
 
 function FanficMenu:enterUserDetails()
@@ -169,7 +172,7 @@ function FanficMenu:enterUserDetails()
                     callback = function()
                         local myfields = self.login_dialog:getFields()
                         UIManager:close(self.login_dialog)
-                        self.logged_in  = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        self.logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
                         logger.dbg("logged in:", self.logged_in)
                         self.username = myfields[1]
                         self.menuWidget.item_table = self:refreshAccountManagementMenu()
@@ -414,11 +417,12 @@ function FanficMenu:onSearchTag(category)
                             return menu_items
                         end
                         UIManager:scheduleIn(1, function()
-                            tags = self.fanfic:searchForTags(query, category)
+                            local success
+                            success, tags = self.fanfic:searchForTags(query, category)
 
                             UIManager:close(searchDialog)
 
-                            if not tags then
+                            if not success or not tags then
                                 return
                             end
                             --

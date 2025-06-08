@@ -42,13 +42,12 @@ function Fanfic:addToMainMenu(menu_items)
     end
 end
 
-function Fanfic:DownloadFanfic(id, parentMenu)
+function Fanfic:DownloadFanfic(id)
     local NetworkMgr = require("ui/network/manager")
 
     logger.dbg("id:" .. id)
-    if NetworkMgr:willRerunWhenOnline(function()
-                self:DownloadFanfic(id)
-            end) then
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected(function () self:DownloadFanfic(id) end)
         return
     end
 
@@ -140,9 +139,8 @@ end
 function Fanfic:UpdateFanfic(fanfic)
     local NetworkMgr = require("ui/network/manager")
 
-    if NetworkMgr:willRerunWhenOnline(function()
-                self:UpdateFanfic(fanfic)
-            end) then
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected(function () self:UpdateFanfic(fanfic) end)
         return
     end
 
@@ -226,10 +224,8 @@ end
 function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
     local NetworkMgr = require("ui/network/manager")
 
-    local success, ficResults, fetchNextPage
-    if NetworkMgr:willRerunWhenOnline(function()
-            success, ficResults, fetchNextPage =  self:fetchFanficsByTag(selectedFandom, sortBy)
-        end) then
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
         return false
     end
 
@@ -260,11 +256,9 @@ end
 function Fanfic:executeSearch(parameters)
     local NetworkMgr = require("ui/network/manager")
 
-    local success, works, fetchNextPage
-    if NetworkMgr:willRerunWhenOnline(function()
-                success, works, fetchNextPage = self:executeSearch(parameters)
-            end) then
-        return success, works, fetchNextPage
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false
     end
     local currentPage = 1
 
@@ -299,33 +293,43 @@ function Fanfic:onShowFanficBrowser(parentMenu, ficResults, fetchNextPage)
 end
 
 function Fanfic:searchForTags(query, type)
-    local tags, error_message = Downloader:searchForTag(query, type)
-    return tags
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local success, tags, error_message = Downloader:searchForTag(query, type)
+    if not success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Tag search request failed. " .. (error_message or "Unknown error"),
+        })
+    end
+    return success, tags
 end
 
 function Fanfic:checkLoggedIn()
     local NetworkMgr = require("ui/network/manager")
-
-    -- Check if the network is available
-    if NetworkMgr:willRerunWhenOnline(function()
-                self:checkLoggedIn()
-            end) then
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
         return
+    end
+    local success, logged_in, error_message = Downloader:getLoggedIn()
+    if not success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Check logged in request failed. " .. (error_message or "Unknown error"),
+        })
     end
 
     -- Check logged in status using the Downloader module
-    return Downloader:getLoggedIn()
+    return success, logged_in, error_message
 
 end
 
 function Fanfic:loginToAO3(username, password)
     local NetworkMgr = require("ui/network/manager")
-
-    -- Check if the network is available
-    if NetworkMgr:willRerunWhenOnline(function()
-                self:loginToAO3(username, password)
-            end) then
-        return
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false
     end
 
     -- Attempt to log in using the Downloader module
@@ -346,12 +350,9 @@ end
 
 function Fanfic:logoutOfAO3()
     local NetworkMgr = require("ui/network/manager")
-
-    -- Check if the network is available
-    if NetworkMgr:willRerunWhenOnline(function()
-                self:logoutOfAO3()
-            end) then
-        return
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false
     end
 
     -- Attempt to log in using the Downloader module

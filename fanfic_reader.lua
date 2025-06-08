@@ -58,6 +58,13 @@ function FanficReader:addToMainMenu(menu_items)
                         text = "Comment",
                         is_enter_default = true,
                         callback = function()
+                            local NetworkMgr = require("ui/network/manager")
+
+                            if not NetworkMgr:isConnected() then
+                                NetworkMgr:runWhenConnected()
+                                return
+                            end
+
                             if self.input_dialog:getInputText() == "" then
                                 return
                             end
@@ -91,7 +98,13 @@ function FanficReader:addToMainMenu(menu_items)
         sorting_hint = "main",
         keep_menu_open = true,
         callback = function()
-            logger.dbg("kudos button working")
+            local NetworkMgr = require("ui/network/manager")
+
+            if not NetworkMgr:isConnected() then
+                NetworkMgr:runWhenConnected()
+                return
+            end
+
             local success, error = AO3Downloader:kudosWork(self.current_fanfic.id)
 
             if success then

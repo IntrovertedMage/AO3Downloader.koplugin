@@ -220,14 +220,16 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     if value == "" then
                                         return
                                     end
-                                    local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                                    self:tagSearchSelectionWidget(
-                                        "Tap on character tags to add to filter",
-                                        tagSearchResults,
-                                        settingValue,
-                                        refresh
-                                    )
-                                    UIManager:close(inputDialog)
+                                    local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                                    if success then
+                                        self:tagSearchSelectionWidget(
+                                            "Tap on character tags to add to filter",
+                                            tagSearchResults,
+                                            settingValue,
+                                            refresh
+                                        )
+                                        UIManager:close(inputDialog)
+                                    end
                                 end,
                             },
                         },
@@ -402,13 +404,15 @@ function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settin
                         if value == "" then
                             return
                         end
-                        local tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                        self:singleTagSearchSelection(
-                            "Tap on character tags to add to filter",
-                            tagSearchResults,
-                            settingValue
-                        )
-                        UIManager:close(inputDialog)
+                        local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                        if success then
+                            self:singleTagSearchSelection(
+                                "Tap on character tags to add to filter",
+                                tagSearchResults,
+                                settingValue
+                            )
+                            UIManager:close(inputDialog)
+                        end
                     end,
                 },
             },
