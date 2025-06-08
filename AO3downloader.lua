@@ -13,6 +13,16 @@ local AO3Downloader = {}
 
 local cookies = {}
 
+local function urlEncode(str)
+    if str then
+        str = string.gsub(str, " ", "+")
+        str = str:gsub("([^%w%-%.%_%~%+])", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
+    end
+    return str
+end
+
 local function saveCookiesToConfig()
     Config:saveSetting("AO3_cookies", cookies)
 end
@@ -56,13 +66,26 @@ end
 
 local function setCookies(responseHeaders)
     if responseHeaders["set-cookie"] then
-        for key, value in string.gmatch(responseHeaders["set-cookie"], "([^=;%s]+)=([^;]*)") do
-            if key and value then
+        for cookie in string.gmatch(responseHeaders["set-cookie"], "([^,]+)") do
+            local key, value = cookie:match("([^=;%s]+)=([^;]*)")
+            if key and value and key:sub(1, 1) == "_" then -- Only store cookies starting with "_"
                 cookies[key] = value
             end
         end
         saveCookiesToConfig() -- Save cookies to the config file
     end
+end
+
+local function generateParametersString(parameters)
+    local query = {}
+
+    for key, value in pairs(parameters) do
+        table.insert(query, string.format("%s=%s", urlEncode(key), urlEncode(value)))
+    end
+
+    local queryString = table.concat(query, "&")
+
+    return queryString
 end
 
 local unescape_map = {
@@ -93,21 +116,26 @@ local function unescape(str)
     end)
 end
 -- Helper function to handle retries for HTTPS requests
-local function performHttpsRequest(request)
-    local max_retries = 3
+local function performHttpsRequest(request, retries, noCookies)
+    local max_retries = retries or 3
     local response, status, response_headers
 
     -- Add cookies to the request headers
-    logger.dbg("request url:" .. request.url)
+    logger.dbg("Request URL: " .. request.url)
     request.headers = request.headers or {}
-    request.headers["Cookie"] = getCookies(request.cookies)
+    if not noCookies then
+        request.headers["Cookie"] = getCookies(request.cookies)
+    end
+
     for i = 0, max_retries do
+        logger.dbg("Attempt " .. (i + 1) .. " for URL: " .. request.url)
         socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
         response, status, response_headers = https.request({
             url = request.url,
             method = request.method or "GET",
             headers = request.headers,
             sink = request.sink,
+            source = request.source,
             protocol = "tlsv1_3", -- Explicitly set the protocol
             options = "all",
         })
@@ -116,23 +144,279 @@ local function performHttpsRequest(request)
         if response_headers then
             setCookies(response_headers)
         end
-        logger.dbg("response:" .. (response or ""))
 
-        if not (response == 1) and i == max_retries then
-            logger.dbg("Request failed Status:", status)
-            socketutil:reset_timeout()
-            return nil
+        logger.dbg("Response status: " .. tostring(status))
+
+        -- handle redirects
+        if status == 301 and response_headers["location"] then
+            local new_url = response_headers["location"]
+            logger.dbg("Redirecting to new URL: " .. new_url)
+            request.url = new_url                              -- Update the request URL
+            return performHttpsRequest(request, retries, true) -- Recursive call for the new URL
         elseif response == 1 then
             socketutil:reset_timeout()
-            return response, status -- Exit if the request succeeds
+            return response, status, response_headers -- Exit if the request succeeds
+        elseif i == max_retries then
+            logger.dbg("Request failed after " .. max_retries .. " attempts. Status: " .. tostring(status))
+            return nil, "Failed to connect using available protocols", nil
         end
 
-        -- Add a sleep to prevent rate limiting.
+        -- Add a sleep to prevent rate limiting
         socket.sleep(1)
     end
 
-    return nil, "Failed to connect using available protocols"
+    return nil, "Failed to connect using available protocols", nil
 end
+
+local function requestAO3Token()
+    local url = getAO3URL() .. "/token_dispenser.json"
+    local response_body = {}
+
+    local headers = get_default_headers()
+    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+    headers["Accept-Encoding"] = nil
+
+    logger.dbg("Requesting AO3 token from:", url)
+
+    local request = {
+        url = url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local response, status = performHttpsRequest(request)
+
+    if not response then
+        logger.dbg("Failed to fetch AO3 token. Status:", status or "unknown error")
+        return nil, "Failed to fetch AO3 token"
+    end
+
+    local body = table.concat(response_body)
+
+    -- Parse the JSON response to extract the token
+    local json = require("dkjson")
+    local success, token_data = pcall(json.decode, body)
+
+    if not success then
+        logger.dbg("Failed to decode JSON response. Error:", token_data)
+        return nil, "Invalid JSON response"
+    end
+
+    if token_data and token_data.token then
+        AO3_Token = token_data.token
+        logger.dbg("AO3 token successfully retrieved and saved.")
+        return AO3_Token
+    else
+        logger.dbg("Failed to parse AO3 token from response.")
+        return nil, "Invalid token response"
+    end
+end
+
+local SessionManager = {}
+
+function SessionManager:StartLoggedInSession(username, password)
+    -- Step 1: Perform a basic request to the AO3 homepage to initialize cookies
+    local homepage_url = getAO3URL()
+    local response_body = {}
+
+    local headers = get_default_headers()
+    logger.dbg("Initializing session by visiting AO3 homepage:", homepage_url)
+
+    local request = {
+        url = homepage_url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local response, status, response_headers = performHttpsRequest(request, 1)
+
+    if not response then
+        logger.dbg("Failed to initialize session. Status:", status or "unknown error")
+        return false
+    end
+
+    -- Step 2: Request the authenticity token
+    local authenticity_token = requestAO3Token()
+    if not authenticity_token then
+        return false
+    end
+
+    -- Step 3: Perform the login request
+    local login_url = getAO3URL() .. "/users/login"
+    response_body = {}
+
+    local headers = get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    local form_data = generateParametersString({
+        ["authenticity_token"] = authenticity_token,
+        ["user[login]"] = username,
+        ["user[password]"] = password,
+        ["commit"] = "Log+In",
+    })
+    headers["Content-Length"] = tostring(#form_data)
+
+    logger.dbg("Logging in to AO3 with URL:", login_url)
+
+    request = {
+        url = login_url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form_data),
+    }
+
+    response, status, response_headers = performHttpsRequest(request, 1)
+
+    if status ~= 302 then
+        logger.dbg("Login failed. Status:", status or "unknown error")
+        return false
+    end
+
+    local headers = get_default_headers()
+    -- Step 4: Follow the redirect to finalize the session
+    local redirect_url = response_headers["location"] or homepage_url
+    response_body = {}
+
+    logger.dbg("Following redirect to:", redirect_url)
+
+    request = {
+        url = redirect_url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    response, status = performHttpsRequest(request, 3)
+
+    if not response then
+        logger.dbg("Failed to finalize session. Status:", status or "unknown error")
+        return false
+    end
+
+    -- Step 5: Check if the user is logged in by looking for the "logged-in" class in the <body> tag
+    local body_content = table.concat(response_body)
+    logger.dbg("Final HTML body content: ", body_content)
+
+    -- Use a more flexible pattern to match the logged-in class
+    if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
+        logger.dbg("Session successfully initialized and logged in.")
+        return true
+    else
+        logger.dbg("Login failed. User is not logged in.")
+        return false
+    end
+end
+
+function SessionManager:EndLoggedInSession()
+    -- Step 1: Request the authenticity token
+    local authenticity_token = requestAO3Token()
+    if not authenticity_token then
+        return false
+    end
+
+    -- Step 3: Perform the log out request
+    local logout_url = getAO3URL() .. "/users/logout"
+    local response_body = {}
+
+    local headers = get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    local form_data = generateParametersString({
+        ["_method"] = "delete",
+        ["authenticity_token"] = authenticity_token,
+    })
+    headers["Content-Length"] = tostring(#form_data)
+
+    logger.dbg("Logging out of AO3 with URL:", logout_url)
+
+    local request = {
+        url = logout_url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form_data),
+    }
+
+    local response, status, response_headers = performHttpsRequest(request, 1)
+
+    if status ~= 302 then
+        logger.dbg("Log out failed. Status:", status or "unknown error")
+        return false
+    end
+
+    local headers = get_default_headers()
+    -- Step 4: Follow the redirect to finalize the session
+    local redirect_url = response_headers["location"] or homepage_url
+    response_body = {}
+
+    logger.dbg("Following redirect to:", redirect_url)
+
+    local request = {
+        url = redirect_url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local response, status = performHttpsRequest(request, 3)
+
+    if not response then
+        logger.dbg("Failed to finalize closing session. Status:", status or "unknown error")
+        return false
+    end
+
+    -- Step 5: Check if the user is logged in by looking for the "logged-in" class in the <body> tag
+    local body_content = table.concat(response_body)
+    logger.dbg("Final HTML body content: ", body_content)
+
+    -- Use a more flexible pattern to match the logged-in class
+    if body_content:find('<body[^>]*class="[^"]*logged%-out[^"]*"') then
+        logger.dbg("Session successfully ended and logged out.")
+        return true
+    else
+        logger.dbg("Log out failed. User is still logged in.")
+        return false
+    end
+end
+
+function SessionManager:GetSessionStatus()
+    -- Step 1: Perform a basic request to the AO3 homepage to initialize cookies
+    local homepage_url = getAO3URL()
+    local response_body = {}
+
+    local headers = get_default_headers()
+    logger.dbg("Initializing session by visiting AO3 homepage:", homepage_url)
+
+    local request = {
+        url = homepage_url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local response, status, response_headers = performHttpsRequest(request, 1)
+
+    if not response then
+        logger.dbg("Failed to initialize session. Status:", status or "unknown error")
+        return false
+    end
+
+    local body_content = table.concat(response_body)
+
+    -- Use a more flexible pattern to match the logged-in class
+    if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
+        logger.dbg("Session: logged in")
+        local username = body_content:match('<a href="/users/([%w_]+)"')
+        return true, username
+    else
+        logger.dbg("Session: logged out")
+        return false, nil
+    end
+end
+
 
 local function parseToCodepoints(str)
     return unescape(str)
@@ -176,6 +460,8 @@ function AO3Downloader:parseSearchResults(root)
 
     for _, element in ipairs(elements) do
         local titleElement = element:select(".heading > a")[1]
+        local restrictedElement = element:select("img[title='Restricted']")
+        [1]
         local authorElement = element:select(".heading > a[rel='author']")[1]
         local summaryElement = element:select(".summary")[1]
         local tagsElement = element:select(".tags > .freeforms")
@@ -199,6 +485,7 @@ function AO3Downloader:parseSearchResults(root)
             -- Extract the work ID from the href attribute
             local href = titleElement.attributes.href
             local id = tonumber(href:match("/works/(%d+)")) -- Extract the numeric ID and convert to number
+            local isRestricted = restrictedElement and true or false                                                                  -- Set to true if restrictedElement exists, otherwise false
 
             -- Extract and clean tags
             local tags = {}
@@ -294,7 +581,9 @@ function AO3Downloader:parseSearchResults(root)
                 or "No summary available"
 
             -- Remove leading and trailing whitespace from the title
-            local title = parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"))
+            local title = titleElement
+                and parseToCodepoints(titleElement:getcontent():gsub("<[^>]+>", ""):gsub("^%s*(.-)%s*$", "%1"))
+                or "Unknown title" -- Trim whitespace and remove internal tags
 
             -- Create the work object
             local work = {
@@ -319,6 +608,7 @@ function AO3Downloader:parseSearchResults(root)
                 comments = comments,
                 kudos = kudos,
                 bookmarks = bookmarks,
+                is_restricted = isRestricted, -- Add the restricted status
             }
 
             -- Add the work to the list
@@ -330,26 +620,11 @@ function AO3Downloader:parseSearchResults(root)
     return works
 end
 
-local function urlEncode(str)
-    if str then
-        str = str:gsub("([^%w%-%.%_%~])", function(c)
-            return string.format("%%%02X", string.byte(c))
-        end)
-    end
-    return str
-end
-
 function AO3Downloader:getWorkMetadata(work_id)
     local url = string.format("%s/works/%s", getAO3URL(), work_id)
     local response_body = {}
 
-    local headers = {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1",
-    }
+    local headers = get_default_headers()
 
     logger.dbg("Fetching metadata for work ID:", work_id)
 
@@ -400,7 +675,8 @@ function AO3Downloader:getWorkMetadata(work_id)
     local chapterIDElements = root:select("#chapter_index > li > form > p > select > option")
 
     -- Extract metadata values
-    local title = titleElement and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"))
+    local title = titleElement
+        and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"):gsub("<[^>]+>", ""))
         or "Unknown title" -- Trim whitespace
     local author = authorElement and parseToCodepoints(authorElement:getcontent()) or "Unknown author"
     local summary = summaryElement
@@ -518,7 +794,7 @@ function AO3Downloader:getWorkMetadata(work_id)
     end
 
     -- Return metadata as a table
-    return {
+    local work = {
         id = work_id,
         title = title,
         author = author,
@@ -543,6 +819,8 @@ function AO3Downloader:getWorkMetadata(work_id)
         category = categoryElement and categoryElement:getcontent(),
         iswip = iswip,
     }
+
+    return work
 end
 
 function AO3Downloader:downloadEpub(link, filename)
@@ -568,7 +846,7 @@ function AO3Downloader:downloadEpub(link, filename)
         sink = socketutil.file_sink(file), -- Pass the file sink here
     }
 
-    local response, status = performHttpsRequest(request)
+    local response, status = performHttpsRequest(request, nil, true)
 
     if not response then
         logger.dbg("Failed to download EPUB. HTTP status code: " .. tostring(status))
@@ -603,7 +881,6 @@ function AO3Downloader:searchFic(parameters, page)
     -- Construct the full URL
     local url = string.format("%s/works?commit=Sort+and+Filter&%s", getAO3URL(), queryString)
     local response_body = {}
-
 
     local headers = get_default_headers()
 
@@ -719,7 +996,6 @@ function AO3Downloader:searchForTag(query, type)
     end
 
     local body = table.concat(response_body)
-    logger.dbg(body)
 
     -- Parse the HTML response
     local root = htmlparser.parse(body)
@@ -748,6 +1024,169 @@ function AO3Downloader:searchForTag(query, type)
     end
 
     return fandoms
+end
+
+function AO3Downloader:login(username, password)
+    local success = SessionManager:StartLoggedInSession(username, password)
+
+    if success then
+        logger.dbg("Login successful for user: " .. username)
+        return true
+    else
+        logger.dbg("Login failed for user: " .. username)
+        return false, "Failed to log in. Please check your credentials or network connection."
+    end
+end
+
+function AO3Downloader:logout()
+    local success = SessionManager:EndLoggedInSession()
+
+    if success then
+        logger.dbg("Log out successful")
+        return true
+    else
+        logger.dbg("Log out failed")
+        return false, "Failed to log in. Please check your credentials or network connection."
+    end
+end
+
+function AO3Downloader:getLoggedIn()
+    return SessionManager:GetSessionStatus()
+end
+
+function AO3Downloader:kudosWork(work_id)
+    local logged_in = self:getLoggedIn()
+
+    if not logged_in then
+        return false, "Please log in to your AO3 account"
+    end
+
+    local authenticity_token = requestAO3Token()
+    if not authenticity_token then
+        return false
+    end
+
+    -- Step 3: Perform the login request
+    local kudos_url = getAO3URL() .. "/kudos.js"
+    local response_body = {}
+
+    local headers = get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    local form_data = generateParametersString({
+        ["authenticity_token"] = authenticity_token,
+        ["kudo[commentable_id]"] = tostring(work_id),
+        ["kudo[commentable_type]"] = "Work",
+    })
+    headers["Content-Length"] = tostring(#form_data)
+
+    logger.dbg("Attempt to give kudos to work with URL:", kudos_url)
+
+    local request = {
+        url = kudos_url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form_data),
+    }
+
+    local response, status, response_headers = performHttpsRequest(request, 1)
+
+    if status == 201 then
+        logger.dbg("Work " .. work_id .. " has been given kudos")
+        return true
+    end
+
+    if status == 422 then
+        logger.dbg("Work " .. work_id .. " has already been given kudos")
+        return false, "Already given kudos"
+    end
+
+    logger.dbg("Work has not been given kudos due to unknown error")
+    return false, "Unknown error"
+end
+
+function AO3Downloader:commentOnWork(comment_content, work_id, chapter_id)
+    local logged_in = self:getLoggedIn()
+
+    if not logged_in then
+        return false, "Please log in to your AO3 account"
+    end
+
+    -- Step 1: Request and parse comment form
+    local comment_url = getAO3URL()
+        .. ((chapter_id and ("/chapters/" .. chapter_id)) or ("/works/" .. work_id))
+        .. "/comments"
+
+    local response_body = {}
+
+    local headers = get_default_headers()
+
+    logger.dbg("Fetching metadata for work ID:", work_id)
+
+    local request = {
+        url = comment_url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        cookies = { ["view_adult"] = "true" },
+    }
+
+    local response, status = performHttpsRequest(request)
+
+    logger.dbg(table.concat(response_body))
+
+    if not response then
+        logger.dbg("Failed to fetch work comment page. Status:", status or "unknown error")
+        return nil, "Failed to fetch work comment page"
+    end
+
+    local body = table.concat(response_body)
+    local root = htmlparser.parse(body)
+
+    local form = root:select("#comment_for_" .. (chapter_id or work_id))[1]
+    local authenticity_token = form:select("[name='authenticity_token']")[1].attributes["value"]
+    local pseud_id = form:select("[name='comment[pseud_id]']")[1].attributes["value"]
+
+    local headers = get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    headers["Referer"] = comment_url
+
+    local custom_cookies = {
+        ["user_credentials"] = "1",
+        ["view_adult"] = "true",
+    }
+
+    local form_data = generateParametersString({
+        ["authenticity_token"] = authenticity_token,
+        ["comment[pseud_id]"] = pseud_id,
+        ["comment[comment_content]"] = comment_content,
+        ["controller_name"] = "comments",
+        ["commit"] = "Comment",
+    })
+    headers["Content-Length"] = tostring(#form_data)
+
+    logger.dbg("Attempt to comment on work with URL:", comment_url)
+    logger.dbg("form data:" .. form_data)
+
+    local request = {
+        url = comment_url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form_data),
+        cookies = custom_cookies,
+    }
+
+    local response, status, response_headers = performHttpsRequest(request, 1)
+
+    if response == 1 then
+        logger.dbg("Comment has been submitted to: " .. work_id)
+        return true
+    end
+
+    logger.dbg("Work has not been commented on due to unknown error")
+    return false, "Unknown error"
 end
 
 return AO3Downloader

@@ -48,6 +48,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         local downloadedFanfic = isDownloaded(v.id)
         local title = v.title
 
+        -- Add a lock symbol if the work is restricted
+        if v.is_restricted then
+            title = "🔒 " .. title
+        end
+
         if downloadedFanfic then
             title = "✓ " .. title -- Append the download symbol to the title
         end

@@ -302,4 +302,72 @@ function Fanfic:searchForTags(query, type)
     local tags, error_message = Downloader:searchForTag(query, type)
     return tags
 end
+
+function Fanfic:checkLoggedIn()
+    local NetworkMgr = require("ui/network/manager")
+
+    -- Check if the network is available
+    if NetworkMgr:willRerunWhenOnline(function()
+                self:checkLoggedIn()
+            end) then
+        return
+    end
+
+    -- Check logged in status using the Downloader module
+    return Downloader:getLoggedIn()
+
+end
+
+function Fanfic:loginToAO3(username, password)
+    local NetworkMgr = require("ui/network/manager")
+
+    -- Check if the network is available
+    if NetworkMgr:willRerunWhenOnline(function()
+                self:loginToAO3(username, password)
+            end) then
+        return
+    end
+
+    -- Attempt to log in using the Downloader module
+    local success, error_message = Downloader:login(username, password)
+
+    if success then
+        UIManager:show(InfoMessage:new{
+            text = "Login successful! Welcome, " .. username .. "!, You'll stay logged in for 2 weeks unless you choose to log out earlier",
+        })
+        return true
+    else
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to log in. " .. (error_message or "Unknown error"),
+        })
+        return false
+    end
+end
+
+function Fanfic:logoutOfAO3()
+    local NetworkMgr = require("ui/network/manager")
+
+    -- Check if the network is available
+    if NetworkMgr:willRerunWhenOnline(function()
+                self:logoutOfAO3()
+            end) then
+        return
+    end
+
+    -- Attempt to log in using the Downloader module
+    local success, error_message = Downloader:logout()
+
+    if success then
+        UIManager:show(InfoMessage:new{
+            text = _("Successfully logged out"),
+        })
+        return true
+    else
+        UIManager:show(InfoMessage:new{
+            text = _("Error: Failed to log out. ") .. (error_message or "Unknown error"),
+        })
+        return false
+    end
+end
+
 return Fanfic

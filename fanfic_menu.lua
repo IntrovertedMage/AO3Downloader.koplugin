@@ -13,6 +13,7 @@ local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local logger = require("logger")
 local CustomFilterMenu = require("custom_filter_menu")
+local MultiInputDialog = require("ui/widget/multiinputdialog")
 
 function util.contains(table, value)
     for _, v in ipairs(table) do
@@ -87,6 +88,12 @@ function FanficMenu:show(fanfic)
                 end,
             },
             {
+                text = "Account management",
+                callback = function()
+                    self:onAccountManagementMenu()
+                end,
+            },
+            {
                 text = "\u{2699} Settings",
                 callback = function()
                     self:onOpenSettings()
@@ -96,6 +103,84 @@ function FanficMenu:show(fanfic)
     })
 
     return self.menuWidget
+end
+
+function FanficMenu:refreshAccountManagementMenu()
+    local menu_items = {
+        {
+            text = self.logged_in and ("Logged in as: " .. self.username) or "Not logged in",
+        },
+    }
+
+    if not self.logged_in then
+        table.insert(menu_items, {
+            text = "Log in",
+            callback = function()
+                self:enterUserDetails()
+            end,
+        })
+    else
+        table.insert(menu_items, {
+            text = "Log out",
+            callback = function()
+                self.logged_in = not self.fanfic:logoutOfAO3()
+                self.menuWidget.item_table = self:refreshAccountManagementMenu()
+                self.menuWidget:updateItems()
+            end,
+        })
+    end
+    logger.dbg(menu_items)
+
+    return menu_items
+end
+
+function FanficMenu:onAccountManagementMenu()
+    self.logged_in, self.username = self.fanfic:checkLoggedIn()
+
+    self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
+end
+
+function FanficMenu:enterUserDetails()
+    self.login_dialog = MultiInputDialog:new({
+        title = "Enter login details:",
+        fields = {
+            {
+                text = "",
+                --description = T(_("Username and password")),
+                hint = "Username",
+            },
+            {
+                text = "",
+                text_type = "password",
+                hint = "Password",
+            },
+        },
+        buttons = {
+            {
+                {
+                    text = "Cancel",
+                    id = "close",
+                    callback = function()
+                        UIManager:close(self.settings_dialog)
+                    end,
+                },
+                {
+                    text = "Login",
+                    callback = function()
+                        local myfields = self.login_dialog:getFields()
+                        UIManager:close(self.login_dialog)
+                        self.logged_in  = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        logger.dbg("logged in:", self.logged_in)
+                        self.username = myfields[1]
+                        self.menuWidget.item_table = self:refreshAccountManagementMenu()
+                        self.menuWidget:updateItems()
+                    end,
+                },
+            },
+        },
+    })
+    UIManager:show(self.login_dialog)
+    self.login_dialog:onShowKeyboard()
 end
 
 function FanficMenu:onSearchFanficMenu()
@@ -413,11 +498,10 @@ end
 
 function FanficMenu:onOpenSettings()
     local settings_options = {
-        { text = "AO3 URL", setting = "AO3_domain" , type = "String"},
-        { text = "Show adult work warning", setting = "show_adult_warning" , type = "Bool"},
+        { text = "AO3 URL",                 setting = "AO3_domain",         type = "String" },
+        { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
     }
     local function generateMenuItems()
-
         local settings_menu_items = {}
 
         for __, setting in ipairs(settings_options) do
@@ -462,9 +546,8 @@ function FanficMenu:onOpenSettings()
                     end,
                 }
             elseif setting.type == "Bool" then
-
                 menu_item = {
-                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) and "On"  or "Off"),
+                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) and "On" or "Off"),
                     callback = function()
                         -- Show an input dialog to update the setting
                         local buttonDialog
