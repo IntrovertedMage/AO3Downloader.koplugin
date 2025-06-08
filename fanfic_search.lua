@@ -32,14 +32,16 @@ function FanficSearch:show(parentMenu, onDownloadCallback)
                             return
                         end
 
-                        UIManager:close(fanfic_lookup_dialog)
-                        UIManager:show(InfoMessage:new{
-                            text = _("Downloading fanfiction epub....")
-                        })
+                        UIManager:scheduleIn(1, function()
+                            onDownloadCallback(inputText)
+                        end)
 
-                        -- Call the provided callback with the entered ID
-                        onDownloadCallback(inputText)
-                        UIManager:close(parentMenu)
+                        UIManager:show(InfoMessage:new({
+                            text = _("Downloading work may take some time…"),
+                            timeout = 1,
+                        }))
+
+                        UIManager:close(fanfic_lookup_dialog)
                     end,
                 },
             }
