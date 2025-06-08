@@ -15,6 +15,15 @@ local cookies = {}
 
 local function urlEncode(str)
     if str then
+        str = str:gsub("([^%w%-%.%_%~])", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
+    end
+    return str
+end
+
+local function formEncode(str)
+    if str then
         str = string.gsub(str, " ", "+")
         str = str:gsub("([^%w%-%.%_%~%+])", function(c)
             return string.format("%%%02X", string.byte(c))
@@ -76,11 +85,23 @@ local function setCookies(responseHeaders)
     end
 end
 
-local function generateParametersString(parameters)
+local function generateParametersStringURL(parameters)
     local query = {}
 
     for key, value in pairs(parameters) do
         table.insert(query, string.format("%s=%s", urlEncode(key), urlEncode(value)))
+    end
+
+    local queryString = table.concat(query, "&")
+
+    return queryString
+end
+
+local function generateParametersStringForm(parameters)
+    local query = {}
+
+    for key, value in pairs(parameters) do
+        table.insert(query, string.format("%s=%s", urlEncode(key), formEncode(value)))
     end
 
     local queryString = table.concat(query, "&")
@@ -250,7 +271,7 @@ function SessionManager:StartLoggedInSession(username, password)
     local headers = get_default_headers()
     headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-    local form_data = generateParametersString({
+    local form_data = generateParametersStringForm({
         ["authenticity_token"] = authenticity_token,
         ["user[login]"] = username,
         ["user[password]"] = password,
@@ -324,7 +345,7 @@ function SessionManager:EndLoggedInSession()
     local headers = get_default_headers()
     headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-    local form_data = generateParametersString({
+    local form_data = generateParametersStringForm({
         ["_method"] = "delete",
         ["authenticity_token"] = authenticity_token,
     })
@@ -1073,7 +1094,7 @@ function AO3Downloader:kudosWork(work_id)
     local headers = get_default_headers()
     headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-    local form_data = generateParametersString({
+    local form_data = generateParametersStringForm({
         ["authenticity_token"] = authenticity_token,
         ["kudo[commentable_id]"] = tostring(work_id),
         ["kudo[commentable_type]"] = "Work",
@@ -1157,7 +1178,7 @@ function AO3Downloader:commentOnWork(comment_content, work_id, chapter_id)
         ["view_adult"] = "true",
     }
 
-    local form_data = generateParametersString({
+    local form_data = generateParametersStringForm({
         ["authenticity_token"] = authenticity_token,
         ["comment[pseud_id]"] = pseud_id,
         ["comment[comment_content]"] = comment_content,
