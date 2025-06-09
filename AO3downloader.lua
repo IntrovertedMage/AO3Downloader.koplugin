@@ -33,15 +33,80 @@ local function formEncode(str)
 end
 
 local function saveCookiesToConfig()
-    Config:saveSetting("AO3_cookies", cookies)
+    Config:saveSetting("cookies", cookies)
 end
 
 local function loadCookiesFromConfig()
-    local savedCookies = Config:readSetting("AO3_cookies")
+    local savedCookies = Config:readSetting("cookies")
     if savedCookies then
         cookies = savedCookies
     end
 end
+
+
+local function parseSetCookie(set_cookie_value)
+    local function isParameter(targetString)
+        local parameter_names = { "Domain", "Expires", "HttpOnly", "Max-Age", "Partioned", "Path", "SameSite", "Secure" }
+        for _, value in ipairs(parameter_names) do
+            if string.lower(targetString) == string.lower(value) then
+                return true
+            end
+        end
+        return false
+    end
+
+    logger.dbg(set_cookie_value)
+    local cookies_values = {}
+    -- Split the set-cookie string by ',' or ';' to handle each part separately
+    local parts = {}
+    local in_expires = false
+    local buffer = ""
+
+    for part in set_cookie_value:gmatch("[^,;]+") do
+        -- Allow for expires value to contain single ,
+        if part:find("expires=", 1, true) then
+            in_expires = true
+            buffer = part
+        elseif in_expires then
+            buffer = buffer .. "," .. part
+            if part:find(" ") then
+                table.insert(parts, buffer)
+                in_expires = false
+                buffer = ""
+            end
+        else
+            table.insert(parts, part)
+        end
+    end
+
+    if buffer ~= "" then
+        table.insert(parts, buffer)
+    end
+
+    local current_cookie = nil
+    for _, part in ipairs(parts) do
+        -- Trim leading and trailing spaces
+        part = part:match("^%s*(.-)%s*$")
+        -- Match key-value pairs or key-only values
+        local name, value = part:match("([^=]+)=?(.*)")
+        if not isParameter(name) then
+            if current_cookie then
+                table.insert(cookies_values, current_cookie)
+            end
+            current_cookie = {}
+            current_cookie["name"] = name
+            current_cookie["value"] = value
+        elseif name then
+            current_cookie[name] = value or true
+        end
+    end
+    if current_cookie then
+        table.insert(cookies_values, current_cookie)
+    end
+
+    return cookies_values
+end
+
 local function get_default_headers()
     return {
         ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
@@ -57,11 +122,15 @@ local function getAO3URL()
     return Config:readSetting("AO3_domain")
 end
 
-local function getCookies(custom_cookies)
+local function getCookies(custom_cookies, url, method)
     loadCookiesFromConfig() -- Ensure cookies are loaded from the config
     local cookieHeader = {}
-    for key, value in pairs(cookies) do
-        table.insert(cookieHeader, key .. "=" .. value)
+    local request_domain = url:match("^(https?://[^/]+)")
+    for __, cookie in pairs(cookies) do
+
+        if request_domain == cookie.from_domain then
+            table.insert(cookieHeader, cookie.name .. "=" .. cookie.value)
+        end
     end
 
     if custom_cookies then
@@ -75,13 +144,15 @@ end
 
 local function setCookies(responseHeaders)
     if responseHeaders["set-cookie"] then
-        for cookie in string.gmatch(responseHeaders["set-cookie"], "([^,]+)") do
-            local key, value = cookie:match("([^=;%s]+)=([^;]*)")
-            if key and value and key:sub(1, 1) == "_" then -- Only store cookies starting with "_"
-                cookies[key] = value
-            end
+        local set_cookie_value = responseHeaders["set-cookie"]
+        local parsed_cookies = parseSetCookie(set_cookie_value)
+
+        for _, current_cookie in ipairs(parsed_cookies) do
+            current_cookie.from_domain = getAO3URL()
+            cookies[current_cookie.name] = current_cookie
         end
-        saveCookiesToConfig() -- Save cookies to the config file
+
+        saveCookiesToConfig()
     end
 end
 
@@ -137,16 +208,14 @@ local function unescape(str)
     end)
 end
 -- Helper function to handle retries for HTTPS requests
-local function performHttpsRequest(request, retries, noCookies)
+local function performHttpsRequest(request, retries)
     local max_retries = retries or 3
     local response, status, response_headers
 
     -- Add cookies to the request headers
     logger.dbg("Request URL: " .. request.url)
     request.headers = request.headers or {}
-    if not noCookies then
-        request.headers["Cookie"] = getCookies(request.cookies)
-    end
+    request.headers["Cookie"] = getCookies(request.cookies, request.url, request.method)
 
     for i = 0, max_retries do
         logger.dbg("Attempt " .. (i + 1) .. " for URL: " .. request.url)
@@ -172,8 +241,8 @@ local function performHttpsRequest(request, retries, noCookies)
         if status == 301 and response_headers["location"] then
             local new_url = response_headers["location"]
             logger.dbg("Redirecting to new URL: " .. new_url)
-            request.url = new_url                              -- Update the request URL
-            return performHttpsRequest(request, retries, true) -- Recursive call for the new URL
+            request.url = new_url -- Update the request URL
+            return performHttpsRequest(request, retries) -- Recursive call for the new URL
         elseif response == 1 then
             socketutil:reset_timeout()
             return response, status, response_headers -- Exit if the request succeeds
@@ -319,7 +388,6 @@ function SessionManager:StartLoggedInSession(username, password)
 
     -- Step 5: Check if the user is logged in by looking for the "logged-in" class in the <body> tag
     local body_content = table.concat(response_body)
-    logger.dbg("Final HTML body content: ", body_content)
 
     -- Use a more flexible pattern to match the logged-in class
     if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
@@ -438,7 +506,6 @@ function SessionManager:GetSessionStatus()
     end
 end
 
-
 local function parseToCodepoints(str)
     return unescape(str)
 end
@@ -481,8 +548,7 @@ function AO3Downloader:parseSearchResults(root)
 
     for _, element in ipairs(elements) do
         local titleElement = element:select(".heading > a")[1]
-        local restrictedElement = element:select("img[title='Restricted']")
-        [1]
+        local restrictedElement = element:select("img[title='Restricted']")[1]
         local authorElement = element:select(".heading > a[rel='author']")[1]
         local summaryElement = element:select(".summary")[1]
         local tagsElement = element:select(".tags > .freeforms")
@@ -506,7 +572,7 @@ function AO3Downloader:parseSearchResults(root)
             -- Extract the work ID from the href attribute
             local href = titleElement.attributes.href
             local id = tonumber(href:match("/works/(%d+)")) -- Extract the numeric ID and convert to number
-            local isRestricted = restrictedElement and true or false                                                                  -- Set to true if restrictedElement exists, otherwise false
+            local isRestricted = restrictedElement and true or false -- Set to true if restrictedElement exists, otherwise false
 
             -- Extract and clean tags
             local tags = {}
@@ -591,14 +657,14 @@ function AO3Downloader:parseSearchResults(root)
 
             -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
             local summary = summaryElement
-                and parseToCodepoints(
-                    summaryElement
-                    :getcontent()
-                    :gsub("<br%s*/?>", "\n")            -- Replace <br> tags with new lines
-                    :gsub("</p>", "\n\n")               -- Add double new lines for paragraph breaks
-                    :gsub("<[^>]+>", "")                -- Remove other HTML tags
-                    :gsub("^%s*(.-)%s*$", "%1")         -- Trim whitespace
-                )
+                    and parseToCodepoints(
+                        summaryElement
+                            :getcontent()
+                            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                            :gsub("<[^>]+>", "") -- Remove other HTML tags
+                            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+                    )
                 or "No summary available"
 
             -- Remove leading and trailing whitespace from the title
@@ -704,10 +770,10 @@ function AO3Downloader:getWorkMetadata(work_id)
         and parseToCodepoints(
             summaryElement
             :getcontent()
-            :gsub("<br%s*/?>", "\n")            -- Replace <br> tags with new lines
-            :gsub("</p>", "\n\n")               -- Add double new lines for paragraph breaks
-            :gsub("<[^>]+>", "")                -- Remove other HTML tags
-            :gsub("^%s*(.-)%s*$", "%1")         -- Trim whitespace
+            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+            :gsub("<[^>]+>", "") -- Remove other HTML tags
+            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
         )
         or "No summary available"
 
@@ -867,7 +933,7 @@ function AO3Downloader:downloadEpub(link, filename)
         sink = socketutil.file_sink(file), -- Pass the file sink here
     }
 
-    local response, status = performHttpsRequest(request, nil, true)
+    local response, status = performHttpsRequest(request, nil)
 
     if not response then
         logger.dbg("Failed to download EPUB. HTTP status code: " .. tostring(status))
@@ -931,7 +997,7 @@ function AO3Downloader:searchFic(parameters, page)
 end
 
 function AO3Downloader:searchByTag(tag_name, page, sort_column)
-    page = page or 1                          -- Default to the first page if no page is specified
+    page = page or 1 -- Default to the first page if no page is specified
     sort_column = sort_column or "revised_at" -- Default to sorting by most recently updated
 
     -- Encode the tag name for use in the URL
