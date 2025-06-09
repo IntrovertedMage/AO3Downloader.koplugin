@@ -1142,7 +1142,11 @@ function AO3Downloader:getLoggedIn()
 end
 
 function AO3Downloader:kudosWork(work_id)
-    local logged_in = self:getLoggedIn()
+    local success, logged_in = self:getLoggedIn()
+
+    if not success then
+        return false, "Log in check failed"
+    end
 
     if not logged_in then
         return false, "Please log in to your AO3 account"
@@ -1194,7 +1198,11 @@ function AO3Downloader:kudosWork(work_id)
 end
 
 function AO3Downloader:commentOnWork(comment_content, work_id, chapter_id)
-    local logged_in = self:getLoggedIn()
+    local success, logged_in = self:getLoggedIn()
+
+    if not success then
+        return false, "Log in check failed"
+    end
 
     if not logged_in then
         return false, "Please log in to your AO3 account"
