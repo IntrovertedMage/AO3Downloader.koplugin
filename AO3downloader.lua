@@ -697,8 +697,8 @@ function AO3Downloader:getWorkMetadata(work_id)
 
     -- Extract metadata values
     local title = titleElement
-        and parseToCodepoints(titleElement:getcontent():gsub("^%s*(.-)%s*$", "%1"):gsub("<[^>]+>", ""))
-        or "Unknown title" -- Trim whitespace
+        and parseToCodepoints(titleElement:getcontent():gsub("<[^>]+>", ""):gsub("^%s*(.-)%s*$", "%1"))
+        or "Unknown title"
     local author = authorElement and parseToCodepoints(authorElement:getcontent()) or "Unknown author"
     local summary = summaryElement
         and parseToCodepoints(
