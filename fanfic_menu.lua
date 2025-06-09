@@ -129,7 +129,6 @@ function FanficMenu:refreshAccountManagementMenu()
             end,
         })
     end
-    logger.dbg(menu_items)
 
     return menu_items
 end
@@ -173,7 +172,6 @@ function FanficMenu:enterUserDetails()
                         local myfields = self.login_dialog:getFields()
                         UIManager:close(self.login_dialog)
                         self.logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
-                        logger.dbg("logged in:", self.logged_in)
                         self.username = myfields[1]
                         self.menuWidget.item_table = self:refreshAccountManagementMenu()
                         self.menuWidget:updateItems()
@@ -248,7 +246,6 @@ end
 
 function FanficMenu:onSelectTag(category)
     local bookmarkSetting = T("bookmarked%1s", category)
-    logger.dbg("setting name: " .. bookmarkSetting)
     local function refreshMenu()
         local menu_items = {}
 
