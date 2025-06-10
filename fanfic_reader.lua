@@ -138,9 +138,9 @@ function FanficReader:addToMainMenu(menu_items)
             }
             table.insert(chapter_menu_options, option)
         end
-        menu_items.comment_work.sub_item_table = chapter_menu_options
+        menu_items.AO3_downloader_comment_work.sub_item_table = chapter_menu_options
     else
-        menu_items.comment_work.callback = function()
+        menu_items.AO3_downloader_comment_work.callback = function()
             showCommentDialog(nil)
         end
     end
