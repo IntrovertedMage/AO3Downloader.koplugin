@@ -202,7 +202,11 @@ function FanficReader:onFinishChapter(chapter_index)
     self.current_fanfic = DownloadedFanfics.markChapterAsRead(self.current_fanfic.id, chapter_index)
 end
 
-function FanficReader:onFinishWork()
+function FanficReader:onFinishSingleChapterWork()
+    if self.current_fanfic.read then
+        return
+    end
+
     UIManager:show(Notification:new({
         text = "Finished work: " .. tostring(self.current_fanfic.title),
     }))
@@ -227,7 +231,7 @@ function FanficReader:onPageUpdate(pageno)
             else
                 local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
                 if document_chapter_index == 2 and ReaderUI.instance.toc:isChapterEnd(pageno) then
-                    FanficReader:onFinishWork()
+                    FanficReader:onFinishSingleChapterWork()
                 end
             end
         end
