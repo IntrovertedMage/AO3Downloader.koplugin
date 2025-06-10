@@ -126,11 +126,14 @@ local function getCookies(custom_cookies, url, method)
     loadCookiesFromConfig() -- Ensure cookies are loaded from the config
     local cookieHeader = {}
     local request_domain = url:match("^(https?://[^/]+)")
-    for __, cookie in pairs(cookies) do
+    local cookies_for_this_domain = cookies[request_domain]
 
-        if request_domain == cookie.from_domain then
+    if cookies_for_this_domain == nil then
+        return ""
+    end
+
+    for __, cookie in pairs(cookies_for_this_domain) do
             table.insert(cookieHeader, cookie.name .. "=" .. cookie.value)
-        end
     end
 
     if custom_cookies then
@@ -142,14 +145,17 @@ local function getCookies(custom_cookies, url, method)
     return table.concat(cookieHeader, "; ")
 end
 
-local function setCookies(responseHeaders)
+local function setCookies(responseHeaders, url)
+    local request_domain = url:match("^(https?://[^/]+)")
     if responseHeaders["set-cookie"] then
         local set_cookie_value = responseHeaders["set-cookie"]
         local parsed_cookies = parseSetCookie(set_cookie_value)
 
         for _, current_cookie in ipairs(parsed_cookies) do
-            current_cookie.from_domain = getAO3URL()
-            cookies[current_cookie.name] = current_cookie
+            if not cookies[request_domain] then
+                cookies[request_domain] = {}
+            end
+            cookies[request_domain][current_cookie.name] = current_cookie
         end
 
         saveCookiesToConfig()
@@ -232,7 +238,7 @@ local function performHttpsRequest(request, retries)
 
         -- Parse and store cookies from the response
         if response_headers then
-            setCookies(response_headers)
+            setCookies(response_headers, request.url)
         end
 
         logger.dbg("Response status: " .. tostring(status))
