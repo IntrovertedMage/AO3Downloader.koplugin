@@ -93,7 +93,7 @@ function FanficReader:addToMainMenu(menu_items)
         self.input_dialog:onShowKeyboard()
     end
 
-    menu_items.kudos_work = {
+    menu_items.AO3_downloader_kudos_work = {
         text = "Give kudos to work ♥",
         sorting_hint = "main",
         keep_menu_open = true,
@@ -120,7 +120,7 @@ function FanficReader:addToMainMenu(menu_items)
         end,
     }
 
-    menu_items.comment_work = {
+    menu_items.AO3_downloader_comment_work = {
         text = "Comment on work",
         sorting_hint = "main",
         keep_menu_open = true,

@@ -31,8 +31,8 @@ end
 
 function Fanfic:addToMainMenu(menu_items)
     if self.ui.file_chooser then
-        menu_items.fanfic = {
-            text = _("AO3 Downloader"),
+        menu_items.AO3_downloader = {
+            text = "AO3 Downloader",
             sorting_hint = "search",
             callback = function()
                 self.menu = FanficMenu:show(self)
