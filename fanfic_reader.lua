@@ -68,7 +68,6 @@ function FanficReader:addToMainMenu(menu_items)
                             if self.input_dialog:getInputText() == "" then
                                 return
                             end
-                            UIManager:close(self.input_dialog)
                             local success, error = AO3Downloader:commentOnWork(
                                 self.input_dialog:getInputText(),
                                 self.current_fanfic.id,
@@ -78,6 +77,7 @@ function FanficReader:addToMainMenu(menu_items)
                                 UIManager:show(InfoMessage:new({
                                     text = "Successfuly commented on work",
                                 }))
+                                UIManager:close(self.input_dialog)
                                 return
                             end
 
