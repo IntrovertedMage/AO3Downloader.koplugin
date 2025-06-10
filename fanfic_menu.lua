@@ -163,7 +163,7 @@ function FanficMenu:enterUserDetails()
                     text = "Cancel",
                     id = "close",
                     callback = function()
-                        UIManager:close(self.settings_dialog)
+                        UIManager:close(self.login_dialog)
                     end,
                 },
                 {
