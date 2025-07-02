@@ -506,13 +506,7 @@ function CustomFilterMenu:refreshMainMenu()
                                 callback = function()
                                     self.filter = filter.parameters
                                     local filters = Config:readSetting("saved_filters")
-                                    util.remove(filters, filter)
-                                    for idx, c_filter in pairs(filters) do
-                                        if c_filter.title == filter.title then
-                                            table.remove(filters, idx)
-                                            break
-                                        end
-                                    end
+                                    filters[filter.title] = nil
                                     Config:saveSetting("saved_filters", filters)
                                     self.menuWidget.item_table = self:refreshMainMenu()
                                     self.menuWidget:updateItems()
