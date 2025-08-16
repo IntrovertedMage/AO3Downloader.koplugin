@@ -70,6 +70,9 @@ local function createConfig()
 
     function config:readSetting(key, default)
         local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+
+        default =  default or config.default_settings[key]
+
         local setting = settings:readSetting(key, default)
         self.updated = true
         self:onFlushSettings(settings)

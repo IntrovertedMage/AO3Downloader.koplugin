@@ -520,7 +520,7 @@ function FanficMenu:onOpenSettings()
             local menu_item
             if setting.type == "String" then
                 menu_item = {
-                    text = setting.text .. ": " .. Config:readSetting(setting.setting, ""),
+                    text = setting.text .. ": " .. Config:readSetting(setting.setting, nil),
                     callback = function()
                         -- Show an input dialog to update the setting
                         local inputDialog
