@@ -19,7 +19,8 @@ local function createConfig()
             "Miraculous Ladybug",
             "Marvel Cinematic Universe",
             "Star Wars - All Media Types",
-        }
+        },
+        filename_template = "%I",
 
     }
 
