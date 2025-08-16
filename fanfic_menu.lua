@@ -498,9 +498,20 @@ function FanficMenu:onViewDownloadedFanfics()
 end
 
 function FanficMenu:onOpenSettings()
+    local function checkTemplateHasID(template)
+        local result =  string.find(template, "%%I")
+        if not result then
+            return false, "Filename template must contain the works ID (%I) atleast once"
+        end
+
+        return true
+    end
+
     local settings_options = {
-        { text = "AO3 URL",                 setting = "AO3_domain",         type = "String" },
+        { text = "AO3 URL",                 setting = "AO3_domain",         type = "String"},
         { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
+        { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check =
+    checkTemplateHasID},
     }
     local function generateMenuItems()
         local settings_menu_items = {}
@@ -514,7 +525,7 @@ function FanficMenu:onOpenSettings()
                         -- Show an input dialog to update the setting
                         local inputDialog
                         inputDialog = InputDialog:new({
-                            title = T("Set value for '%1'", setting.text),
+                            title = setting.description or T("Set value for '%1'", setting.text),
                             input = Config:readSetting(setting.setting),
                             input_type = "text",
                             buttons = {
@@ -530,6 +541,16 @@ function FanficMenu:onOpenSettings()
                                         is_enter_default = true,
                                         callback = function()
                                             local newValue = inputDialog:getInputText()
+                                            if setting.check then
+                                                local check_result, message = setting.check(newValue)
+
+                                                if not check_result then
+                                                    UIManager:show(InfoMessage:new({
+                                                        text = message
+                                                    }))
+                                                    return
+                                                end
+                                            end
                                             Config:saveSetting(setting.setting, newValue)
                                             UIManager:close(inputDialog)
                                             self.menuWidget:switchItemTable(nil, generateMenuItems())

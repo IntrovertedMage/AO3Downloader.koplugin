@@ -12,6 +12,8 @@ local DownloadedFanfics = require("downloaded_fanfics")
 local FanficBrowser = require("fanficbrowser")
 local FanficMenu = require("fanfic_menu")
 local FanficReader = require("fanfic_reader")
+local Config = require("fanfic_config")
+local util = require("util")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -40,6 +42,18 @@ function Fanfic:addToMainMenu(menu_items)
             end,
         }
     end
+end
+
+local function GenerateFileName(metadata)
+    local template = Config:readSetting("filename_template", "%I")
+    -- local template = "%T--%A--(%I)"
+
+    local replace = {
+        ["%I"] = metadata.id,
+        ["%T"] = metadata.title:gsub("%s+", "_"),
+        ["%A"] = metadata.author:gsub("%s+", "_"),
+    }
+    return template:gsub("(%%%a)", replace)
 end
 
 function Fanfic:DownloadFanfic(id)
@@ -71,8 +85,9 @@ function Fanfic:DownloadFanfic(id)
 
     os.execute("sleep " .. math.random(1, 3))
 
+    local filename = GenerateFileName(metadata)
     -- Download the EPUB file
-    local succeeded, path = Downloader:downloadEpub(url, tostring(id))
+    local succeeded, path = Downloader:downloadEpub(url, filename)
     if not succeeded then
         UIManager:show(InfoMessage:new{
             text = _("Error: failed to download and write EPUB")
@@ -98,11 +113,11 @@ function Fanfic:DownloadFanfic(id)
         kudos = metadata.kudos,
         bookmarks = metadata.bookmarks,
         comments = metadata.comments,
-        last_accessed = os.date("%Y-%m-%d %H:%M:%S"), -- Add last_accessed field
+        last_accessed = os.date("%Y-%m-%d %H:%M:%S"), --current date
         rating = metadata.rating,
         category = metadata.category,
         iswip = metadata.iswip,
-        updated = metadata.updated ,
+        updated = metadata.updated,
         published = metadata.published,
         wordcount = metadata.wordcount,
     }
@@ -164,13 +179,19 @@ function Fanfic:UpdateFanfic(fanfic)
 
     os.execute("sleep " .. math.random(2, 5)) -- Random delay between 2-5 seconds
 
+    local filename = GenerateFileName(metadata)
     -- Re-download the EPUB file
-    local succeeded, path = Downloader:downloadEpub(url, tostring(fanfic.id))
+    local succeeded, path = Downloader:downloadEpub(url, filename)
     if not succeeded then
         UIManager:show(InfoMessage:new{
             text = _("Error: failed to download and write updated EPUB")
         })
         return
+    end
+
+    -- delete old file if filename has changed since last update
+    if path ~= fanfic.path then
+        util.removeFile(fanfic.path)
     end
 
     -- Update the metadata and file path
