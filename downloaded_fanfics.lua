@@ -164,9 +164,12 @@ local function moveFile(from, to)
 end
 
 function DownloadedFanfics.changePath(fanficId, newPath, notSave)
-    local fanfic =downloaded_fanfics[tostring(fanficId)]
+    local fanfic = downloaded_fanfics[tostring(fanficId)]
     if fanfic.path ~= newPath then
+        local sdrFilePath = fanfic.path:sub(1, -5) .. "sdr"
+        local newSdrFilePath = newPath:sub(1, -5) .. "sdr"
         moveFile(fanfic.path, newPath)
+        moveFile(sdrFilePath, newSdrFilePath)
         fanfic.path = newPath
     end
 
