@@ -65,7 +65,7 @@ function Fanfic:onOpenAO3DownloaderMenu()
     UIManager:show(self.menu)
 end
 
-local function GenerateFileName(metadata)
+function Fanfic.GenerateFileName(metadata)
     local template = Config:readSetting("filename_template", "%I")
     -- local template = "%T--%A--(%I)"
 
@@ -106,7 +106,7 @@ function Fanfic:DownloadFanfic(id)
 
     os.execute("sleep " .. math.random(1, 3))
 
-    local filename = GenerateFileName(metadata)
+    local filename = self.GenerateFileName(metadata)
     -- Download the EPUB file
     local succeeded, path = Downloader:downloadEpub(url, filename)
     if not succeeded then

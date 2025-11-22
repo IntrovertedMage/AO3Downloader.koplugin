@@ -15,6 +15,7 @@ local logger = require("logger")
 local CustomFilterMenu = require("custom_filter_menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
+local DownloadedFanfics = require("downloaded_fanfics")
 
 function util.contains(table, value)
     for _, v in ipairs(table) do
@@ -508,12 +509,27 @@ function FanficMenu:onOpenSettings()
         return true
     end
 
+
+    function DownloadedFanfics.sortFanfics()
+        local history = DownloadedFanfics.getAll()
+
+
+        for _, fanfic_item in pairs(history) do
+            local filename = self.fanfic.GenerateFileName(fanfic_item)
+            local correct_path = Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub"
+            DownloadedFanfics.changePath(fanfic_item.id, correct_path, true)
+        end
+
+        DownloadedFanfics.save()
+
+    end
+
     local settings_options = {
         { text = "AO3 URL",                 setting = "AO3_domain",         type = "String"},
         { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
         { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check = checkTemplateHasID},
         { text = "Fanfic folder",   setting = "fanfic_folder_path",  type = "Folder"},
-        { text = "Resort file positiion", call_function = test}
+        { text = "Re-sort file paths", call_function = DownloadedFanfics.sortFanfics, type = "Function"},
     }
     local function generateMenuItems()
         local settings_menu_items = {}
@@ -626,6 +642,23 @@ function FanficMenu:onOpenSettings()
                             self.menuWidget:updateItems()
                         end
                         filemanagerutil.showChooseDialog(title_header, caller_callback, current_path, default_path)
+                    end
+                }
+            elseif setting.type == "Function" then
+                menu_item = {
+                    text = setting.text,
+                    callback =  function ()
+                        UIManager:scheduleIn(1, function()
+
+                            setting.call_function()
+                            UIManager:show(InfoMessage:new{
+                                text = T("Task %1 complete", setting.text);
+                            })
+                        end)
+                        UIManager:show(InfoMessage:new{
+                            text = T("Carrying out %1 may take some time...", setting.text);
+                        })
+
                     end
                 }
             end

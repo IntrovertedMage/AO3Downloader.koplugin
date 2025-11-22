@@ -1,6 +1,8 @@
 local json = require("dkjson")
 local Paths = require("FanficPaths")
 local logger = require("logger")
+local ffiUtil = require("ffi/util")
+local Device = require("device")
 
 local DownloadedFanfics = {}
 
@@ -86,7 +88,7 @@ function DownloadedFanfics.load()
     end
 
     -- Normalize fields for all loaded fanfics
-    for _, fanfic in ipairs(history) do
+    for _, fanfic in pairs(history) do
         fanfic.id = tostring(fanfic.id)
         fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
         fanfic.relationships = normalizeField(fanfic.relationships)
@@ -114,12 +116,15 @@ function DownloadedFanfics.add(fanfic)
 end
 
 -- Update an existing fanfic in the downloaded list
-function DownloadedFanfics.update(fanfic)
+function DownloadedFanfics.update(fanfic, notSave)
     fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
     fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
     fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
     fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
+    if notSave then
+        return
+    end
     DownloadedFanfics.save()
 end
 
@@ -148,5 +153,25 @@ end
 function DownloadedFanfics.checkIfStored(fanficId)
     return downloaded_fanfics[tostring(fanficId)]
 end
+
+
+
+
+
+local mv_bin = Device:isAndroid() and "/system/bin/mv" or "/bin/mv"
+local function moveFile(from, to)
+    return ffiUtil.execute(mv_bin, from, to) == 0
+end
+
+function DownloadedFanfics.changePath(fanficId, newPath, notSave)
+    local fanfic =downloaded_fanfics[tostring(fanficId)]
+    if fanfic.path ~= newPath then
+        moveFile(fanfic.path, newPath)
+        fanfic.path = newPath
+    end
+
+    DownloadedFanfics.update(fanfic, notSave)
+end
+
 
 return DownloadedFanfics
