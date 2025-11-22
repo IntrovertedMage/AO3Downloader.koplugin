@@ -60,10 +60,9 @@ function Fanfic:onOpenAO3DownloaderMenu()
     if not self.ui.file_chooser then
         self.ui:handleEvent(Event:new("Home"))
     end
-    --
+
     self.menu = FanficMenu:show(self)
     UIManager:show(self.menu)
-    --]
 end
 
 local function GenerateFileName(metadata)
