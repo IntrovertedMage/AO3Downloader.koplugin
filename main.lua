@@ -14,6 +14,8 @@ local FanficMenu = require("fanfic_menu")
 local FanficReader = require("fanfic_reader")
 local Config = require("fanfic_config")
 local util = require("util")
+local Event = require("ui/event")
+local Dispatcher = require("dispatcher")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -27,6 +29,7 @@ function Fanfic:init()
         self.ui.menu:registerToMainMenu(self)
     end
 
+    self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     DownloadedFanfics.load() -- Load fanfic history
 end
@@ -37,11 +40,29 @@ function Fanfic:addToMainMenu(menu_items)
             text = "AO3 Downloader",
             sorting_hint = "search",
             callback = function()
-                self.menu = FanficMenu:show(self)
-                UIManager:show(self.menu)
+                self.ui:handleEvent(Event:new("OpenAO3DownloaderMenu"))
             end,
         }
     end
+end
+
+
+function Fanfic:onDispatcherRegisterActions()
+    Dispatcher:registerAction("AO3Downloader_openPluginMenu", {
+        category = "none",
+        event = "OpenAO3DownloaderMenu",
+        title = _("AO3 Downloader: open menu"),
+        general = true,
+    })
+
+end
+function Fanfic:onOpenAO3DownloaderMenu()
+    if not self.ui.file_chooser then
+        self.ui:handleEvent(Event:new("Home"))
+    end
+
+    self.menu = FanficMenu:show(self)
+    UIManager:show(self.menu)
 end
 
 local function GenerateFileName(metadata)
