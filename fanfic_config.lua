@@ -21,6 +21,7 @@ local function createConfig()
             "Star Wars - All Media Types",
         },
         filename_template = "%I",
+        fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
 
     }
 

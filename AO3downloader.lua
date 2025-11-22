@@ -8,6 +8,8 @@ local Config = require("fanfic_config")
 local socketutil = require("socketutil")
 local socket = require("socket")
 local util = require("util")
+local FFIUtil = require("ffi/util")
+local T = FFIUtil.template
 
 local AO3Downloader = {}
 
@@ -922,7 +924,7 @@ function AO3Downloader:downloadEpub(link, filename)
         return false
     end
 
-    local path = Paths.getHomeDirectory() .. "/Downloads/" .. filename .. ".epub" -- Use a writable directory on Kobo
+    local path =  T("%1/%2.epub", Config:readSetting("fanfic_folder_path"), filename)
 
     local file, err = io.open(path, "w")
     if not file then
@@ -936,7 +938,7 @@ function AO3Downloader:downloadEpub(link, filename)
     local request = {
         url = link,
         headers = headers,
-        sink = socketutil.file_sink(file), -- Pass the file sink here
+        sink = socketutil.file_sink(file),
     }
 
     local response, status = performHttpsRequest(request, nil)
