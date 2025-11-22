@@ -648,16 +648,18 @@ function FanficMenu:onOpenSettings()
                 menu_item = {
                     text = setting.text,
                     callback =  function ()
+                        local notice = InfoMessage:new{
+                            text = T("Carrying out %1 may take some time...", setting.text);
+                        }
                         UIManager:scheduleIn(1, function()
 
                             setting.call_function()
+                            UIManager:close(notice)
                             UIManager:show(InfoMessage:new{
                                 text = T("Task %1 complete", setting.text);
                             })
                         end)
-                        UIManager:show(InfoMessage:new{
-                            text = T("Carrying out %1 may take some time...", setting.text);
-                        })
+                        UIManager:show(notice)
 
                     end
                 }
