@@ -922,7 +922,7 @@ function AO3Downloader:downloadEpub(link, filename)
         return false
     end
 
-    local path = Paths.getHomeDirectory() .. "/Downloads/" .. filename .. ".epub" -- Use a writable directory on Kobo
+    local path = Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub"
 
     local file, err = io.open(path, "w")
     if not file then
@@ -936,7 +936,7 @@ function AO3Downloader:downloadEpub(link, filename)
     local request = {
         url = link,
         headers = headers,
-        sink = socketutil.file_sink(file), -- Pass the file sink here
+        sink = socketutil.file_sink(file),
     }
 
     local response, status = performHttpsRequest(request, nil)

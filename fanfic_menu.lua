@@ -14,6 +14,7 @@ local T = FFIUtil.template
 local logger = require("logger")
 local CustomFilterMenu = require("custom_filter_menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
+local filemanagerutil = require("apps/filemanager/filemanagerutil")
 
 function util.contains(table, value)
     for _, v in ipairs(table) do
@@ -510,8 +511,9 @@ function FanficMenu:onOpenSettings()
     local settings_options = {
         { text = "AO3 URL",                 setting = "AO3_domain",         type = "String"},
         { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
-        { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check =
-    checkTemplateHasID},
+        { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check = checkTemplateHasID},
+        { text = "Fanfic folder",   setting = "fanfic_folder_path",  type = "Folder"},
+        { text = "Resort file positiion", call_function = test}
     }
     local function generateMenuItems()
         local settings_menu_items = {}
@@ -609,6 +611,22 @@ function FanficMenu:onOpenSettings()
                         })
                         UIManager:show(buttonDialog)
                     end,
+                }
+            elseif setting.type == "Folder" then
+                menu_item = {
+                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) or ""),
+                    callback = function()
+                        local title_header = T("Current %1:", setting.text)
+                        local current_path = Config:readSetting(setting.setting)
+                        local default_path = filemanagerutil.getDefaultDir()
+                        local caller_callback = function(path)
+                            Config:saveSetting(setting.setting, path);
+                            menu_item.text = setting.text .. ": " .. (Config:readSetting(setting.setting) or "")
+                            self.menuWidget:switchItemTable(nil, generateMenuItems())
+                            self.menuWidget:updateItems()
+                        end
+                        filemanagerutil.showChooseDialog(title_header, caller_callback, current_path, default_path)
+                    end
                 }
             end
             table.insert(settings_menu_items, menu_item)
