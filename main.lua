@@ -200,7 +200,8 @@ function Fanfic:UpdateFanfic(fanfic)
 
     os.execute("sleep " .. math.random(2, 5)) -- Random delay between 2-5 seconds
 
-    local filename = GenerateFileName(metadata)
+    local filename = fanfic.path:match("[^/]*.epub$")
+    filename = filename:sub(0, #filename - 4)
     -- Re-download the EPUB file
     local succeeded, path = Downloader:downloadEpub(url, filename)
     if not succeeded then
