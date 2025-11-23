@@ -1011,7 +1011,7 @@ function AO3Downloader:searchByTag(tag_name, page, sort_column)
     -- Encode the tag name for use in the URL
     local encoded_tag_name = tag_name
         :gsub("/", "*s*") -- Replace / with */*
-        :gsub(" & ", "*a*")
+        :gsub("&", "*a*")
 
     encoded_tag_name = urlEncode(encoded_tag_name)
     -- Construct the URL
