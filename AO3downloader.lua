@@ -91,7 +91,7 @@ local function parseSetCookie(set_cookie_value)
         part = part:match("^%s*(.-)%s*$")
         -- Match key-value pairs or key-only values
         local name, value = part:match("([^=]+)=?(.*)")
-        if not isParameter(name) then
+        if not isParameter(name) and value ~= "" and value ~= nil then
             if current_cookie then
                 table.insert(cookies_values, current_cookie)
             end
