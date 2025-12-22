@@ -4,7 +4,6 @@ local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local logger = require("logger")
 local UIManager = require("ui/uimanager")
-local Downloader = require("AO3downloader")
 local InfoMessage = require("ui/widget/infomessage")
 local ConfirmBox = require("ui/widget/confirmbox")
 local BD = require("ui/bidi")
@@ -13,9 +12,9 @@ local FanficBrowser = require("fanficbrowser")
 local FanficMenu = require("fanfic_menu")
 local FanficReader = require("fanfic_reader")
 local Config = require("fanfic_config")
-local util = require("util")
 local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
+local AO3DownloaderClient = require("AO3_downloader_client")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -87,16 +86,16 @@ function Fanfic:DownloadFanfic(id)
     end
 
     -- Fetch metadata for the work
-    local metadata, error_message = Downloader:getWorkMetadata(id)
-    if not metadata then
+    local request_result  = AO3DownloaderClient:getWorkMetadata(id)
+    if not request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to fetch work metadata: ") .. (error_message or "Unknown error")
+            text = _("Error: failed to fetch work metadata: ") .. (request_result.error or "Unknown error")
         })
         return
     end
 
     -- Extract the EPUB link from the metadata
-    local url = metadata.epub_link
+    local url = request_result.work_metadata.epub_link
     if not url then
         UIManager:show(InfoMessage:new{
             text = _("Error: EPUB link not found for this work")
@@ -106,10 +105,10 @@ function Fanfic:DownloadFanfic(id)
 
     os.execute("sleep " .. math.random(1, 3))
 
-    local filename = self.GenerateFileName(metadata)
+    local filename = self.GenerateFileName(request_result.work_metadata)
     -- Download the EPUB file
-    local succeeded, path = Downloader:downloadEpub(url, filename)
-    if not succeeded then
+    local download_request_result = AO3DownloaderClient:downloadEpub(url, Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub")
+    if not download_request_result.success then
         UIManager:show(InfoMessage:new{
             text = _("Error: failed to download and write EPUB")
         })
@@ -119,28 +118,28 @@ function Fanfic:DownloadFanfic(id)
     -- Save metadata of the downloaded fanfic
     local fanfic = {
         id = id,
-        path = path,
-        title = metadata.title,
-        author = metadata.author,
-        chapters = metadata.chapters,
-        chapter_data = metadata.chapterData,
-        summary = metadata.summary,
-        fandoms = metadata.fandoms,
-        tags = metadata.tags,
-        relationships = metadata.relationships,
-        characters = metadata.characters,
-        warnings = metadata.warnings,
-        hits = metadata.hits,
-        kudos = metadata.kudos,
-        bookmarks = metadata.bookmarks,
-        comments = metadata.comments,
+        path = download_request_result.filepath,
+        title = request_result.work_metadata.title,
+        author = request_result.work_metadata.author,
+        chapters = request_result.work_metadata.chapters,
+        chapter_data = request_result.work_metadata.chapterData,
+        summary = request_result.work_metadata.summary,
+        fandoms = request_result.work_metadata.fandoms,
+        tags = request_result.work_metadata.tags,
+        relationships = request_result.work_metadata.relationships,
+        characters = request_result.work_metadata.characters,
+        warnings = request_result.work_metadata.warnings,
+        hits = request_result.work_metadata.hits,
+        kudos = request_result.work_metadata.kudos,
+        bookmarks = request_result.work_metadata.bookmarks,
+        comments = request_result.work_metadata.comments,
         last_accessed = os.date("%Y-%m-%d %H:%M:%S"), --current date
-        rating = metadata.rating,
-        category = metadata.category,
-        iswip = metadata.iswip,
-        updated = metadata.updated,
-        published = metadata.published,
-        wordcount = metadata.wordcount,
+        rating = request_result.work_metadata.rating,
+        category = request_result.work_metadata.category,
+        iswip = request_result.work_metadata.iswip,
+        updated = request_result.work_metadata.updated,
+        published = request_result.work_metadata.published,
+        wordcount = request_result.work_metadata.wordcount,
     }
 
     if fanfic.chapter_data then
@@ -155,7 +154,7 @@ function Fanfic:DownloadFanfic(id)
 
     -- Show confirmation dialog
     UIManager:show(ConfirmBox:new{
-        text = T(_("File saved to:\n%1\nWould you like to read the downloaded work now?"), BD.filepath(path)),
+        text = T(_("File saved to:\n%1\nWould you like to read the downloaded work now?"), BD.filepath(fanfic.path)),
         ok_text = _("Read now"),
         ok_callback = function()
             if self.menu.browse_window then
@@ -181,16 +180,16 @@ function Fanfic:UpdateFanfic(fanfic)
     end
 
     -- Fetch updated metadata for the work
-    local metadata, error_message = Downloader:getWorkMetadata(fanfic.id)
-    if not metadata then
+    local request_result  = AO3DownloaderClient:getWorkMetadata(fanfic.id)
+    if not request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to fetch updated metadata: ") .. (error_message or "Unknown error")
+            text = T("Error: failed to fetch updated metadata: %1", request_result.error_message or "Unknown error")
         })
         return
     end
 
     -- Extract the EPUB link from the metadata
-    local url = metadata.epub_link
+    local url = request_result.work_metadata.epub_link
     if not url then
         UIManager:show(InfoMessage:new{
             text = _("Error: EPUB link not found for this work")
@@ -200,59 +199,53 @@ function Fanfic:UpdateFanfic(fanfic)
 
     os.execute("sleep " .. math.random(2, 5)) -- Random delay between 2-5 seconds
 
-    local filename = fanfic.path:match("[^/]*.epub$")
-    filename = filename:sub(0, #filename - 4)
     -- Re-download the EPUB file
-    local succeeded, path = Downloader:downloadEpub(url, filename)
-    if not succeeded then
+    local download_request_result = AO3DownloaderClient:downloadEpub(url, fanfic.path)
+    if not download_request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to download and write updated EPUB")
+            text = "Error: failed to download and write updated EPUB"
         })
         return
     end
 
-    -- delete old file if filename has changed since last update
-    if path ~= fanfic.path then
-        util.removeFile(fanfic.path)
-    end
 
     -- Update the metadata and file path
-    fanfic.path = path
-    fanfic.title = metadata.title or fanfic.title
-    fanfic.date = metadata.date or fanfic.date
-    fanfic.chapters = metadata.chapters or fanfic.chapters
-    fanfic.author = metadata.author or fanfic.author
-    fanfic.fandoms = metadata.fandoms or fanfic.fandoms
-    fanfic.summary = metadata.summary or fanfic.summary
-    fanfic.tags = metadata.tags or fanfic.tags
-    fanfic.relationships = metadata.relationships or fanfic.relationships
-    fanfic.characters = metadata.characters or fanfic.characters
-    fanfic.warnings = metadata.warnings or fanfic.warnings
-    fanfic.hits = metadata.hits or fanfic.hits
-    fanfic.kudos = metadata.kudos or fanfic.kudos
-    fanfic.bookmarks = metadata.bookmarks or fanfic.bookmarks
-    fanfic.comments = metadata.comments or fanfic.comments
+    fanfic.path = fanfic.path
+    fanfic.title = request_result.work_metadata.title or fanfic.title
+    fanfic.date = request_result.work_metadata.date or fanfic.date
+    fanfic.chapters = request_result.work_metadata.chapters or fanfic.chapters
+    fanfic.author = request_result.work_metadata.author or fanfic.author
+    fanfic.fandoms = request_result.work_metadata.fandoms or fanfic.fandoms
+    fanfic.summary = request_result.work_metadata.summary or fanfic.summary
+    fanfic.tags = request_result.work_metadata.tags or fanfic.tags
+    fanfic.relationships = request_result.work_metadata.relationships or fanfic.relationships
+    fanfic.characters = request_result.work_metadata.characters or fanfic.characters
+    fanfic.warnings = request_result.work_metadata.warnings or fanfic.warnings
+    fanfic.hits = request_result.work_metadata.hits or fanfic.hits
+    fanfic.kudos = request_result.work_metadata.kudos or fanfic.kudos
+    fanfic.bookmarks = request_result.work_metadata.bookmarks or fanfic.bookmarks
+    fanfic.comments = request_result.work_metadata.comments or fanfic.comments
     fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S") -- Update last_accessed field
-    fanfic.rating = metadata.rating or fanfic.rating
-    fanfic.category = metadata.category or fanfic.category
-    fanfic.iswip = metadata.iswip or fanfic.iswip
-    fanfic.updated = metadata.updated or fanfic.updated
-    fanfic.published = metadata.published or fanfic.published
-    fanfic.wordcount = metadata.wordcount or fanfic.wordcount
+    fanfic.rating = request_result.work_metadata.rating or fanfic.rating
+    fanfic.category = request_result.work_metadata.category or fanfic.category
+    fanfic.iswip = request_result.work_metadata.iswip or fanfic.iswip
+    fanfic.updated = request_result.work_metadata.updated or fanfic.updated
+    fanfic.published = request_result.work_metadata.published or fanfic.published
+    fanfic.wordcount = request_result.work_metadata.wordcount or fanfic.wordcount
 
-    if #fanfic.chapter_data == 0 and not (metadata.chapterData == 0) then
+    if #fanfic.chapter_data == 0 and not (request_result.work_metadata.chapterData == 0) then
         fanfic.read = nil
     end
 
     if fanfic.chapter_data then
         for idx, chapter in pairs(fanfic.chapter_data) do
-            if metadata.chapterData[idx] then
-                metadata.chapterData[idx].read = chapter.read or false
+            if request_result.work_metadata.chapterData[idx] then
+                request_result.work_metadata.chapterData[idx].read = chapter.read or false
             end
         end
     end
 
-    fanfic.chapter_data = metadata.chapterData
+    fanfic.chapter_data = request_result.work_metadata.chapterData
 
 
 
@@ -277,21 +270,30 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
     -- Define the function to fetch the next page for the selected fandom
     local function fetchNextPage()
         currentPage = currentPage + 1
-        logger.dbg("currentpagefetching:"..currentPage)
-        return Downloader:searchByTag(selectedFandom, currentPage, sortBy)
+        logger.dbg("fetching page:"..currentPage)
+        local next_page_results =  AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
+        if not next_page_results.success then
+            UIManager:show(InfoMessage:new{
+                text = T("Error: %1", next_page_results.error),
+                icon = "notice-warning",
+            })
+        end
+
+        return next_page_results.result_works
     end
 
     -- Fetch the first page of results
-    local ficResults = Downloader:searchByTag(selectedFandom, currentPage, sortBy)
+    local search_results = AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
 
-    if not ficResults then
+    if not search_results.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: Failed to fetch fanfics for the selected tag.")
+            text = T("Error: %1", search_results.error),
+            icon = "notice-warning",
         })
         return false
     end
 
-    return true, ficResults, fetchNextPage
+    return true, search_results.result_works, fetchNextPage
 
 end
 
@@ -303,25 +305,35 @@ function Fanfic:executeSearch(parameters)
         NetworkMgr:runWhenConnected()
         return false
     end
+
     local currentPage = 1
 
     -- Define the function to fetch the next page for the search parameters
     local function fetchNextPage()
         currentPage = currentPage + 1
-        return Downloader:searchFic(parameters, currentPage)
+        local request_result = AO3DownloaderClient:searchByParameters(parameters, currentPage)
+
+        if not request_result.success then
+            UIManager:show(InfoMessage:new{
+                text = _("Error: ") .. (request_result.error or "Unknown error"),
+            })
+            return false
+        end
+
+        return request_result.works
     end
 
     -- Fetch the first page of results
-    local works, error_message = Downloader:searchFic(parameters, currentPage)
+    local request_result = AO3DownloaderClient:searchByParameters(parameters, currentPage)
 
-    if not works then
+    if not request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: ") .. (error_message or "Unknown error"),
+            text = _("Error: ") .. (request_result.error or "Unknown error"),
         })
         return false
     end
 
-    return true, works, fetchNextPage
+    return true, request_result.works, fetchNextPage
 end
 
 function Fanfic:onShowFanficBrowser(parentMenu, ficResults, fetchNextPage)
@@ -341,13 +353,14 @@ function Fanfic:searchForTags(query, type)
         NetworkMgr:runWhenConnected()
         return false, {}
     end
-    local success, tags, error_message = Downloader:searchForTag(query, type)
-    if not success then
+    local search_results = AO3DownloaderClient:searchForTags(query, type)
+    if not search_results.success then
         UIManager:show(InfoMessage:new{
-            text = "Error: Tag search request failed. " .. (error_message or "Unknown error"),
+            text = "Error: Tag search request failed. " .. (search_results.error or "Unknown error"),
         })
+        return false
     end
-    return success, tags
+    return true,search_results.result_tags
 end
 
 function Fanfic:checkLoggedIn()
@@ -356,15 +369,15 @@ function Fanfic:checkLoggedIn()
         NetworkMgr:runWhenConnected()
         return
     end
-    local success, logged_in, error_message = Downloader:getLoggedIn()
-    if not success then
+    local request_result = AO3DownloaderClient:GetSessionStatus()
+    if not request_result.success then
         UIManager:show(InfoMessage:new{
-            text = "Error: Check logged in request failed. " .. (error_message or "Unknown error"),
+            text = "Error: Check logged in request failed. " .. (request_result.error or "Unknown error"),
         })
     end
 
     -- Check logged in status using the Downloader module
-    return success, logged_in, error_message
+    return request_result.success, request_result.logged_in, request_result.username
 
 end
 
@@ -376,16 +389,16 @@ function Fanfic:loginToAO3(username, password)
     end
 
     -- Attempt to log in using the Downloader module
-    local success, error_message = Downloader:login(username, password)
+    local request_result = AO3DownloaderClient:startLoggedInSession(username, password)
 
-    if success then
+    if request_result.success then
         UIManager:show(InfoMessage:new{
-            text = "Login successful! Welcome, " .. username .. "!, You'll stay logged in for 2 weeks unless you choose to log out earlier",
+            text = "Login successful! Welcome, " .. username .. "!",
         })
         return true
     else
         UIManager:show(InfoMessage:new{
-            text = "Error: Failed to log in. " .. (error_message or "Unknown error"),
+            text = "Failed to log in. Error:" .. (request_result.error or "Unknown error"),
         })
         return false
     end
@@ -399,16 +412,17 @@ function Fanfic:logoutOfAO3()
     end
 
     -- Attempt to log in using the Downloader module
-    local success, error_message = Downloader:logout()
+    local request_result = AO3DownloaderClient:endLoggedInSession()
 
-    if success then
+
+    if request_result.success then
         UIManager:show(InfoMessage:new{
             text = _("Successfully logged out"),
         })
         return true
     else
         UIManager:show(InfoMessage:new{
-            text = _("Error: Failed to log out. ") .. (error_message or "Unknown error"),
+            text = _("Error: Failed to log out. ") .. (request_result.error or "Unknown error"),
         })
         return false
     end

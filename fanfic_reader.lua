@@ -5,8 +5,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Event = require("ui/event")
 local Notification = require("ui/widget/notification")
 local DownloadedFanfics = require("downloaded_fanfics")
-local AO3Downloader = require("AO3downloader")
-local logger = require("logger")
+local AO3DownloaderClient = require("AO3_downloader_client")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 
@@ -68,12 +67,12 @@ function FanficReader:addToMainMenu(menu_items)
                             if self.input_dialog:getInputText() == "" then
                                 return
                             end
-                            local success, error = AO3Downloader:commentOnWork(
+                            local request_result = AO3DownloaderClient:commentOnWork(
                                 self.input_dialog:getInputText(),
                                 self.current_fanfic.id,
                                 chapter_id
                             )
-                            if success then
+                            if request_result.success then
                                 UIManager:show(InfoMessage:new({
                                     text = "Successfuly commented on work",
                                 }))
@@ -82,7 +81,7 @@ function FanficReader:addToMainMenu(menu_items)
                             end
 
                             UIManager:show(InfoMessage:new({
-                                text = "Error: " .. error,
+                                text = "Error: " .. request_result.error,
                             }))
                         end,
                     },
@@ -105,9 +104,9 @@ function FanficReader:addToMainMenu(menu_items)
                 return
             end
 
-            local success, error = AO3Downloader:kudosWork(self.current_fanfic.id)
+            local request_result = AO3DownloaderClient:kudosWork(self.current_fanfic.id)
 
-            if success then
+            if request_result.success then
                 UIManager:show(InfoMessage:new({
                     text = "Successfuly sent kudos to work",
                 }))
@@ -115,7 +114,7 @@ function FanficReader:addToMainMenu(menu_items)
             end
 
             UIManager:show(InfoMessage:new({
-                text = "Error: " .. error,
+                text = "Error: " .. request_result.error,
             }))
         end,
     }
