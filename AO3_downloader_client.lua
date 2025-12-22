@@ -81,15 +81,8 @@ function encodeHelper:generateParametersStringForm(params)
     return table.concat(form_parts, "&")
 end
 
-
-function AO3DownloaderClient:createNewSession()
-
-    return {
-        success = true;
-    }
-end
-
 function AO3DownloaderClient:requestAO3Token()
+    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token...")
     local tokenRequestURL = getAO3URL() .. "/token_dispenser.json"
 
     local response_body = {}
@@ -170,7 +163,6 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
 
     local headers = HTTPQueryHandler:get_default_headers()
     headers["Content-Type"] = "application/x-www-form-urlencoded"
-    logger.dbg("AO3 authenticity token: " .. tostring(ao3_token.token))
 
     local form_data = encodeHelper:generateParametersStringForm({
         ["authenticity_token"] = ao3_token.token,
@@ -232,6 +224,7 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
 end
 
 function AO3DownloaderClient:endLoggedInSession()
+    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session...")
     local authenticity_token = self:requestAO3Token()
 
     if not authenticity_token.success then
@@ -302,6 +295,7 @@ function AO3DownloaderClient:endLoggedInSession()
 end
 
 function AO3DownloaderClient:GetSessionStatus()
+    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status...")
     local homepage_url = getAO3URL()
     local response_body = {}
 
@@ -342,6 +336,7 @@ function AO3DownloaderClient:GetSessionStatus()
 end
 
 function AO3DownloaderClient:getWorkMetadata(work_id)
+    logger.dbg("AO3Downloader.koplugin: Fetching metadata for work ID: " .. tostring(work_id))
     local url = T("%1/works/%2", getAO3URL(), work_id)
 
     local response_body = {}
@@ -376,6 +371,7 @@ function AO3DownloaderClient:getWorkMetadata(work_id)
 end
 
 function AO3DownloaderClient:downloadEpub(download_link, filepath)
+    logger.dbg("AO3Downloader.koplugin: Downloading EPUB from link: " .. tostring(download_link) .. " to filepath: " .. tostring(filepath))
     if not download_link or not download_link:match("^https?://") then
         return {
             success = false,
@@ -418,6 +414,7 @@ end
 
 function AO3DownloaderClient:searchByParameters(parameters, page_no)
     local page = page_no or 1 -- Default to the first page if no page is specified
+    logger.dbg("AO3Downloader.koplugin: Executing work search by parameters. Page no: " .. tostring(page_no))
     local query = {}
 
     -- Build the query string from the parameters
@@ -469,6 +466,7 @@ end
 
 function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
     local page = page_no or 1
+    logger.dbg("AO3Downloader.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
     local sort_column = sort_by or "revised_at"
 
     local encoded_tag_name = tag_name
@@ -508,6 +506,7 @@ function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
 end
 
 function AO3DownloaderClient:searchForTags(search_query, tag_type)
+    logger.dbg("AO3Downloader.koplugin: Executing tag search for query: " .. tostring(search_query) .. ", tag type: " .. tostring(tag_type))
     if not search_query or search_query == "" then
         return {
             success = false,
@@ -558,6 +557,7 @@ function AO3DownloaderClient:searchForTags(search_query, tag_type)
 end
 
 function AO3DownloaderClient:kudosWork(work_id)
+    logger.dbg("AO3Downloader.koplugin: Sending kudos to work. Work ID: " .. tostring(work_id))
     local login_status = self:GetSessionStatus()
     if not login_status.success then
         return {
@@ -628,6 +628,7 @@ function AO3DownloaderClient:kudosWork(work_id)
 end
 
 function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
+    logger.dbg("AO3Downloader.koplugin: Posting comment on work. Work ID: " .. tostring(work_id) .. ", chapter ID: " .. tostring(chapter_id))
 
     if not comment_content or comment_content == "" then
         return {
@@ -1171,7 +1172,6 @@ local function parseSetCookie(set_cookie_value)
         return false
     end
 
-    logger.dbg(set_cookie_value)
     local cookies_values = {}
     -- Split the set-cookie string by ',' or ';' to handle each part separately
     local parts = {}
@@ -1295,12 +1295,12 @@ function HTTPQueryHandler:performHTTPRequest(request, retries)
 
 
 
-    logger.dbg("AO3Downloader.koplugin: Peforming HTTP request to:" .. request.url);
+    logger.dbg("AO3Downloader.koplugin: Peforming HTTP request to :" .. request.url);
 
 
 
-    for i = 0, max_retries do
-        logger.dbg("Attempt " .. (i + 1) .. " for URL: " .. request.url)
+    for i = 1, max_retries do
+        logger.dbg("AO3Downloader.koplugin: Attempt " .. (i) .. " for URL: " .. request.url)
         socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
         response, status, response_headers = https.request({
             url = request.url,
