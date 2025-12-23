@@ -102,7 +102,7 @@ function AO3UserBrowser:generateMenuTable()
     table.insert(kv_pairs, gifts_item)
 
     local fandom_title_item = {
-        "Works by fandoms",
+        "Works by fandom:",
         "",
         separator = true,
 
