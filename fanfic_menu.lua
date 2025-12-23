@@ -206,6 +206,12 @@ function FanficMenu:onSearchFanficMenu()
                 self:onShowFanficSearch()
             end,
         },
+        {
+            text = _("Search for user"),
+            callback = function()
+                self:onSelectAuthor()
+            end,
+        }
     }
     self.menuWidget:GoDownInMenu("Select search mode", menu_items)
 end
@@ -469,17 +475,11 @@ function FanficMenu:onBrowseByTag(selectedTag)
                     if not success then
                         return
                     end
-                    FanficBrowser:show(
-                        self.ui,
+
+                    self.fanfic:onShowFanficBrowser(
                         self.menuWidget,
                         ficResults,
-                        fetchNextPage,
-                        function(fanfic)
-                            self.fanfic:UpdateFanfic(fanfic)
-                        end, -- Update callback
-                        function(fanficId, parentMenu)
-                            self.fanfic:DownloadFanfic(fanficId, parentMenu)
-                        end -- Download callback
+                        fetchNextPage
                     )
                 end)
                 UIManager:show(InfoMessage:new({
@@ -497,6 +497,166 @@ function FanficMenu:onViewDownloadedFanfics()
     DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, function(fanfic)
         self.fanfic:UpdateFanfic(fanfic)
     end)
+end
+
+function FanficMenu:onSelectAuthor()
+    local function refreshMenu()
+        local authors = Config:readSetting("bookmarkedAuthors", {})
+
+
+        -- Show the matching fandoms in a menu
+        local menu_items = {}
+
+
+        table.insert(menu_items, {
+            text = "\u{f002} " .. _("Search for author"),
+            callback = function()
+                self:onSearchAuthor()
+            end,
+        })
+
+        for __, author in ipairs(authors) do
+            local displayText = T("★ %1", author)
+            table.insert(menu_items, {
+                text = displayText,
+                callback = function()
+                    local dialog = nil
+                    dialog = ButtonDialog:new({
+                        title = displayText,
+                        buttons = {
+                            {
+                                {
+                                    text = _("Search Author"),
+                                    callback = function()
+                                        local username, pseud
+                                        if string.find(author, "%(") and string.find(author, "%)") then
+                                            username = string.match(author, "%((.-)%)")
+                                            pseud = string.match(author, "^(.-)%s*%(")
+                                        else
+                                            username = author
+                                            pseud = author
+                                        end
+                                        self.fanfic:showUserInfo(username, pseud, self.menuWidget)
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                                {
+                                    text = _("Unbookmark Author"),
+                                    callback = function()
+                                        -- Remove the fandom from bookmarks
+                                        for i, v in ipairs(authors) do
+                                            if v == author then
+                                                table.remove(authors, i)
+                                                break
+                                            end
+                                        end
+                                        Config:saveSetting("bookmarkedAuthors", authors)
+                                        UIManager:show(InfoMessage:new({
+                                            text = T("'%1' has been removed from your bookmarks.", author),
+                                        }))
+                                        UIManager:close(dialog)
+                                        refreshMenu()                              -- Refresh the menu to update the star
+                                        self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
+                                        self.menuWidget:updateItems()
+                                    end,
+                                },
+                            },
+                        },
+
+                    })
+                    UIManager:show(dialog)
+                end,
+            })
+        end
+
+        return menu_items
+    end
+
+    self.menuWidget:GoDownInMenu("Bookmarked Authors", refreshMenu())
+
+end
+
+
+function FanficMenu:onSearchAuthor()
+    local search_dialog
+    search_dialog = InputDialog:new({
+        title = _("Search for author on AO3"),
+        input = "",
+        input_type = "text",
+        buttons = {
+            {
+                {
+                    text = _("Close"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(search_dialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local author_query = search_dialog:getInputText()
+                        UIManager:close(search_dialog)
+                        local success, users, next_page = self.fanfic:searchForUsers(author_query)
+                        if not success then
+                            return
+                        end
+                        local function generateMenuItems()
+                            local menu_items = {}
+                            for __, user in ipairs(users) do
+                                table.insert(menu_items, {
+                                    text = T("%1 (%2) | (%3 works) (%4 bookmarks)",user.pseud, user.username, tostring(user.works_count), tostring(user.bookmarks_count)),
+                                    callback = function()
+                                        local dialog
+                                        dialog = ButtonDialog:new({
+                                            buttons = {
+                                                {
+                                                    {
+                                                        text = _("View User"),
+                                                        callback = function()
+                                                            self.fanfic:showUserInfo(user.username, user.pd, self.menuWidget)
+                                                            UIManager:close(dialog)
+                                                        end,
+                                                    },
+                                                },
+                                                {
+                                                    {
+                                                        text = _("Bookmark Author"),
+                                                        callback = function()
+                                                            local authors = Config:readSetting("bookmarkedAuthors", {})
+                                                            if not util.contains(authors, user.username) then
+                                                                table.insert(authors, user.username)
+                                                                Config:saveSetting("bookmarkedAuthors", authors)
+                                                                UIManager:show(InfoMessage:new({
+                                                                    text = T("'%1' has been added to your bookmarks.", user.username),
+                                                                }))
+                                                            else
+                                                                UIManager:show(InfoMessage:new({
+                                                                    text = T("'%1' is already in your bookmarks.", user.username),
+                                                                }))
+                                                            end
+                                                            UIManager:close(dialog)
+                                                        end,
+                                                    },
+                                                },
+                                            },
+                                        })
+                                        UIManager:show(dialog)
+                                    end,
+                                })
+                            end
+                            return menu_items
+                        end
+                        self.menuWidget:GoDownInMenu(T('"%1" user search results', author_query), generateMenuItems())
+                    end,
+                },
+            }
+        }
+    })
+
+    UIManager:show(search_dialog)
+    search_dialog:onShowKeyboard()
 end
 
 function FanficMenu:onOpenSettings()

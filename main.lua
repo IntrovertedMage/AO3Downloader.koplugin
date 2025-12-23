@@ -317,7 +317,14 @@ function Fanfic:executeSearch(parameters)
             UIManager:show(InfoMessage:new{
                 text = _("Error: ") .. (request_result.error or "Unknown error"),
             })
+            currentPage = currentPage - 1
             return false
+        end
+
+        -- no more works to fetch
+        if #request_result.works == 0 then
+            currentPage = currentPage - 1
+            return {}
         end
 
         return request_result.works
@@ -337,14 +344,143 @@ function Fanfic:executeSearch(parameters)
 end
 
 function Fanfic:onShowFanficBrowser(parentMenu, ficResults, fetchNextPage)
+    logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
     FanficBrowser:show(
         self.ui,
         parentMenu,
         ficResults,
         fetchNextPage,
         function(fanfic) self:UpdateFanfic(fanfic) end, -- Update callback
-        function(fanficId, parentMenu) self:DownloadFanfic(fanficId, parentMenu) end -- Download callback
+        function(fanficId, parentMenu) self:DownloadFanfic(fanficId, parentMenu) end, -- Download callback
+        function (author, parentMenu)
+            -- Check if author contains pseud, if yes parse the pseud (format: "pseeud (username)" or username)
+            local username
+            local pseud
+
+            if string.find(author, "%(") and string.find(author, "%)") then
+                username = string.match(author, "%((.-)%)")
+                pseud = string.match(author, "^(.-)%s*%(")
+            else
+                username = author
+                pseud = author
+            end
+            logger.dbg("Opening user browser for author: " .. username .. " pseud: " .. pseud)
+            self:showUserInfo(username, pseud, parentMenu)
+
+        end -- Open author user browser callback
     )
+end
+
+function Fanfic:searchForUsers(query)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local search_results = AO3DownloaderClient:searchForUsers(query)
+    if not search_results.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: User search request failed. " .. (search_results.error or "Unknown error"),
+        })
+        return false
+    end
+
+    logger.dbg(search_results.result_users)
+
+    local current_page = 1
+
+    local function getNextPage()
+        current_page = current_page + 1
+        local next_page_result = AO3DownloaderClient:searchForUsers(query, current_page)
+        if not next_page_result.success then
+            current_page = current_page - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: User search request failed. " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more users to fetch
+        if #next_page_result.result_users == 0 then
+            current_page = current_page - 1
+            return {}
+        end
+
+        return  next_page_result.result_users
+    end
+
+    return true,search_results.result_users, getNextPage
+end
+
+function Fanfic:showUserInfo(username, pseud, parentMenu)
+    local AO3UserBrowser = require("AO3_user_browser")
+    local request_result = AO3DownloaderClient:getUserData(username, pseud)
+    if not request_result.success then
+        UIManager:show(InfoMessage:new{
+            text = T("Error: Failed to fetch user info: %1", request_result.error or "Unknown error"),
+        })
+        return
+    end
+    logger.dbg(request_result.user_data)
+    AO3UserBrowser:show(request_result.user_data, self.ui, parentMenu, self)
+end
+
+function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local works_result = AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id)
+    if not works_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch works from user page: " .. (works_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    local currentPage = 1
+
+    local function getNextPage()
+        currentPage = currentPage + 1
+        local next_page_result = AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id, currentPage)
+        if not next_page_result.success then
+            currentPage = currentPage - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch works from user page: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more works to fetch
+        if #next_page_result.works == 0 then
+            currentPage = currentPage - 1
+            return {}
+        end
+
+        return  next_page_result.works
+    end
+
+    return true, works_result.works, getNextPage
+
+end
+
+function Fanfic:getSeriesFromUserPage(username)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local series_result = AO3DownloaderClient:getUserSeries(username)
+    if not series_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch series from user page: " .. (series_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    return true, series_result.series
+
 end
 
 function Fanfic:searchForTags(query, type)

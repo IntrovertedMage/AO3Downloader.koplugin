@@ -10,7 +10,15 @@ local util = require("util")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 
-local FanficBrowser = {}
+local FanficBrowser = {
+    ui = nil,
+    parentMenu = nil,
+    browse_window = nil,
+    updateFanficCallback = nil,
+    downloadFanficCallback = nil,
+    showAuthorInfoCallback = nil,
+}
+
 
 function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback, downloadFanficCallback)
     -- Helper function to check if a fanfic is already downloaded
@@ -37,6 +45,15 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
     -- Populate the initial list of fanfics
     for __, v in pairs(ficResults) do
         if __ == "total" then
+            goto continue
+        end
+
+        if v.is_deleted then
+            table.insert(kv_pairs, { "DELETED WORK", "", separator = true })
+            for i = 1, 12 do
+                table.insert(kv_pairs, { "", "" })
+            end
+            table.insert(kv_pairs, { "", "", separator = true })
             goto continue
         end
         -- Normalize relationships, characters, and tags
@@ -123,7 +140,54 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
         table.insert(kv_pairs, title_item)
         -- Add additional details about the fanfic
-        table.insert(kv_pairs, { "     " .. "Author:", v.author })
+        if v.author == "" then
+            v.author = "Anonymous"
+        end
+        table.insert(kv_pairs, { "     " .. "Author:", (v.author or "Anonymous") .. (v.gifted_to and (" (Gifted to: " .. v.gifted_to .. ")") or "") ,
+        callback = function()
+
+            -- Do nothing if there is no author information, i.e tne author is anonymous
+            if not v.author or v.author == "orphan_account" then
+                return
+            end
+
+            local buttons = {}
+
+            local dialog
+            for author in string.gmatch(v.author, '([^,]+)') do
+                table.insert(buttons, {{
+                    text = util.trim(author),
+                    callback = function()
+                            UIManager:close(dialog)
+                            self.showAuthorInfoCallback(util.trim(author), self.parentMenu)
+                    end,
+                }})
+            end
+            for giftee in string.gmatch(v.gifted_to, '([^,]+)') do
+                table.insert(buttons, {{
+                    text = util.trim(giftee) .. " (Giftee)",
+                    callback = function()
+                            UIManager:close(dialog)
+                            self.showAuthorInfoCallback(util.trim(giftee), self.parentMenu)
+                    end,
+                }})
+            end
+
+            table.insert(buttons,{{
+                text = _("Close"),
+                callback = function()
+                    UIManager:close(dialog)
+                end,
+            }})
+
+            dialog = ButtonDialog:new({
+
+                title = T("Work %1: %2", string.find(v.author, ",") and "authors" or "author", v.author),
+                buttons = buttons,
+            })
+            UIManager:show(dialog)
+        end,
+        })
         table.insert(kv_pairs, { "     " .. "Rating:", v.rating })
         table.insert(
             kv_pairs,
@@ -157,10 +221,10 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         -- Combine comments, kudos, bookmarks, and hits into one line
         local stats = string.format(
             "Hits: %s | Kudos: %s | Bookmarks: %s | Comments: %s",
-            v.comments or "0",
+            v.hits or "0",
             v.kudos or "0",
             v.bookmarks or "0",
-            v.hits or "0"
+            v.comments or "0"
         )
         table.insert(kv_pairs, { "     " .. "Stats:", stats, separator = true })
         ::continue::
@@ -226,10 +290,11 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
     UIManager:show(warningDialog)
 end
 
-function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback)
+function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback)
     self.ui = ui
     self.updateFanficCallback = updateFanficCallback
     self.downloadFanficCallback = downloadFanficCallback
+    self.showAuthorInfoCallback = showAuthorInfoCallback
     self.parentMenu = parentMenu
 
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
