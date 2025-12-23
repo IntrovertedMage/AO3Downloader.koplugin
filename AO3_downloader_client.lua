@@ -51,7 +51,7 @@ function encodeHelper:unescapeText(str)
     }
 
     local gsub = string.gsub
-    return gsub(str, "(&(#?)([%d%a]+);)", function(orig, n, s)
+    local result = gsub(str, "(&(#?)([%d%a]+);)", function(orig, n, s)
         if unescape_map[s] then
             return unescape_map[s]
         elseif n == "#" then -- unescape unicode
@@ -67,6 +67,7 @@ function encodeHelper:unescapeText(str)
             return orig
         end
     end)
+    return result
 end
 
 function encodeHelper:parseToCodepoints(str)
