@@ -140,37 +140,40 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
         table.insert(kv_pairs, title_item)
         -- Add additional details about the fanfic
-        if v.author == "" then
-            v.author = "Anonymous"
-        end
         table.insert(kv_pairs, { "     " .. "Author:", (v.author or "Anonymous") .. (v.gifted_to and (" (Gifted to: " .. v.gifted_to .. ")") or "") ,
         callback = function()
-
-            -- Do nothing if there is no author information, i.e tne author is anonymous
-            if not v.author or v.author == "orphan_account" then
-                return
-            end
 
             local buttons = {}
 
             local dialog
-            for author in string.gmatch(v.author, '([^,]+)') do
-                table.insert(buttons, {{
-                    text = util.trim(author),
-                    callback = function()
-                            UIManager:close(dialog)
-                            self.showAuthorInfoCallback(util.trim(author), self.parentMenu)
-                    end,
-                }})
+
+            if v.author then
+                for author in string.gmatch(v.author, '([^,]+)') do
+                    table.insert(buttons, {{
+                        text = util.trim(author),
+                        callback = function()
+                                UIManager:close(dialog)
+                                self.showAuthorInfoCallback(util.trim(author), self.parentMenu)
+                        end,
+                    }})
+                end
             end
-            for giftee in string.gmatch(v.gifted_to, '([^,]+)') do
-                table.insert(buttons, {{
-                    text = util.trim(giftee) .. " (Giftee)",
-                    callback = function()
-                            UIManager:close(dialog)
-                            self.showAuthorInfoCallback(util.trim(giftee), self.parentMenu)
-                    end,
-                }})
+
+            if v.gifted_to then
+                for giftee in string.gmatch(v.gifted_to, '([^,]+)') do
+                    table.insert(buttons, {{
+                        text = util.trim(giftee) .. " (Giftee)",
+                        callback = function()
+                                UIManager:close(dialog)
+                                self.showAuthorInfoCallback(util.trim(giftee), self.parentMenu)
+                        end,
+                    }})
+                end
+            end
+
+            -- If no buttons were created, just return
+            if #buttons == 0 then
+                return
             end
 
             table.insert(buttons,{{
