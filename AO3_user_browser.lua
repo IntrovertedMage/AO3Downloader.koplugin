@@ -26,29 +26,68 @@ function AO3UserBrowser:show(userData, ui, parentMenu, fanfic)
         kv_pairs = {},
     }
 
-    local author_string
+    self:loadPage()
 
-    if self.userData.pseud ~= self.userData.username then
-        author_string = T("%1 (%2)", self.userData.pseud, self.userData.username)
-    else
-        author_string = self.userData.username
-    end
-
-    self.AO3UserWindow = UserWindow:new({
-        title = "AO3 User: " .. author_string,
-        kv_pairs = menuTable,
-        title_bar_fm_style = true,
-        is_popout = false,
-        is_borderless = true,
-        show_page = 1,
-    })
-
-    UIManager:show(self.AO3UserWindow)
 
 end
 
 function AO3UserBrowser:generateMenuTable()
     local kv_pairs = {}
+
+    local table_contains = function(table, element)
+        for _, value in pairs(table) do
+            if value == element then
+                return true
+            end
+        end
+        return false
+    end
+
+    local table_remove = function(table, element)
+        for i, value in pairs(table) do
+            if value == element then
+                table[i] = nil
+                return
+            end
+        end
+    end
+
+    local Config = require("fanfic_config")
+
+    local bookmarked_users = Config:readSetting("bookmarkedUsers", {})
+
+    local user_display_name = (self.userData.username == self.userData.pseud and self.userData.username or self.userData.pseud .. " (" .. self.userData.username .. ")")
+
+    local is_bookmarked = table_contains(bookmarked_users, user_display_name)
+
+    local bookmark_user_item = {
+        is_bookmarked and "★ Remove user from bookmarks" or "☆ Bookmark user",
+        "",
+        callback = function()
+            -- Make sure to get most recent version of bookmarks in case of changes elsewhere
+            bookmarked_users = Config:readSetting("bookmarkedUsers", {})
+            is_bookmarked = table_contains(bookmarked_users, user_display_name)
+            local InfoMessage = require("ui/widget/infomessage")
+            if is_bookmarked then
+                table_remove(bookmarked_users, user_display_name)
+                Config:saveSetting("bookmarkedUsers", bookmarked_users)
+                UIManager:show(InfoMessage:new({
+                    text = T("User: '%1' has been removed from your bookmarks.", user_display_name),
+                }))
+            else
+                table.insert(bookmarked_users, user_display_name)
+                Config:saveSetting("bookmarkedUsers", bookmarked_users)
+                UIManager:show(InfoMessage:new({
+                    text = T("User: '%1' has been added to your bookmarks.", user_display_name),
+                }))
+            end
+
+            self:loadPage()
+        end,
+        separator = true,
+    }
+
+    table.insert(kv_pairs, bookmark_user_item)
 
     local all_works_item = {
         "Works:",
@@ -125,6 +164,27 @@ function AO3UserBrowser:generateMenuTable()
     return kv_pairs
 end
 
+function AO3UserBrowser:loadPage()
+    if self.AO3UserWindow then
+        UIManager:close(self.AO3UserWindow)
+    end
+    local author_string
+    if self.userData.pseud ~= self.userData.username then
+        author_string = T("%1 (%2)", self.userData.pseud, self.userData.username)
+    else
+        author_string = self.userData.username
+    end
+
+    self.AO3UserWindow = UserWindow:new({
+        title = "AO3 User: " .. author_string,
+        kv_pairs = self:generateMenuTable(),
+        title_bar_fm_style = true,
+        is_popout = false,
+        is_borderless = true,
+        show_page = 1,
+    })
+    UIManager:show(self.AO3UserWindow)
+end
 
 function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
     local success, works, getNextPage = self.Fanfic:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id)
