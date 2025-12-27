@@ -70,7 +70,7 @@ function Fanfic:onOpenFanficReader(fanfic_path, current_fanfic, start_chapter)
     FanficReader:show({
         fanfic_path = fanfic_path,
         current_fanfic = current_fanfic,
-        start_chapter = start_chapter,
+        chapter_opening_at = start_chapter,
     })
 end
 
@@ -158,7 +158,7 @@ function Fanfic:DownloadFanfic(id)
     local download_request_result = AO3DownloaderClient:downloadEpub(url, Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub")
     if not download_request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to download and write EPUB")
+            text = _("Error: failed to download and write EPUB, " .. (download_request_result.error_message or ""))
         })
         return
     end
