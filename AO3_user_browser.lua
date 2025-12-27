@@ -239,7 +239,7 @@ function AO3UserBrowser:openUserSeriesList()
     if success then
         local series_menu_kv = {}
         table.insert(series_menu_kv, {
-            "<- Back to profile",
+            "← Back to profile",
             "",
             separator = true,
             callback = function()
@@ -301,7 +301,7 @@ function AO3UserBrowser:openPseudsList()
         local pseuds_menu_kv = {}
 
         table.insert(pseuds_menu_kv, {
-            "<- Back to profile",
+            "← Back to profile",
             "",
             separator = true,
             callback = function()
