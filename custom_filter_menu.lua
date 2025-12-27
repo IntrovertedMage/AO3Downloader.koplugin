@@ -1428,7 +1428,6 @@ function CustomFilterMenu:executeSearch()
 
         -- Show the results in the FanficBrowser
         self.fanfic:onShowFanficBrowser(
-            self.menuWidget,
             ficResults,
             fetchNextPage
         )

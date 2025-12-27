@@ -10,7 +10,6 @@ local AO3UserBrowser = {
     Fanfic = nil,
     userData = nil,
     uiManager = nil,
-    parentMenu = nil,
     menu = nil,
     menu_layers = {},
 }
@@ -39,9 +38,8 @@ function AO3UserBrowser:GoUpInMenu()
 end
 
 
-function AO3UserBrowser:show(userData, ui, parentMenu, fanfic)
+function AO3UserBrowser:show(userData, ui, fanfic)
     self.userData = userData
-    self.parentMenu = parentMenu
     self.ui = ui
     self.Fanfic = fanfic
 
@@ -211,6 +209,7 @@ end
 function AO3UserBrowser:loadPage(title, menu_table)
     if self.AO3UserWindow then
         UIManager:close(self.AO3UserWindow)
+        self.Fanfic.menu_stack[self.AO3UserWindow] = nil
     end
 
     self.AO3UserWindow = UserWindow:new({
@@ -221,6 +220,7 @@ function AO3UserBrowser:loadPage(title, menu_table)
         is_borderless = true,
         show_page = 1,
     })
+    self.Fanfic.menu_stack[self.AO3UserWindow] = true
     UIManager:show(self.AO3UserWindow)
 end
 
@@ -228,7 +228,7 @@ function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
     local success, works, getNextPage = self.Fanfic:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id)
     works.total =  works.total or total or 0
     if success then
-        self.Fanfic:onShowFanficBrowser(self.parentMenu, works, getNextPage)
+        self.Fanfic:onShowFanficBrowser(works, getNextPage)
     else
         self.ui:showMessageBox("Error", "Failed to fetch works for category: " .. tostring(category))
     end
@@ -259,7 +259,7 @@ function AO3UserBrowser:openUserSeriesList()
                     end
 
                     seriesWorks.total = series.work_count or 0
-                    self.Fanfic:onShowFanficBrowser(self.parentMenu, seriesWorks, fetchNextPage)
+                    self.Fanfic:onShowFanficBrowser(seriesWorks, fetchNextPage)
                 end,
                 seperator = true,
             })
@@ -316,7 +316,7 @@ function AO3UserBrowser:openPseudsList()
                 callback = function()
                     local success, userData = self.Fanfic:getUserData(self.userData.username, pseud.name)
                     if success then
-                        self:show(userData, self.ui, self.parentMenu, self.Fanfic)
+                        self:show(userData, self.ui, self.Fanfic)
                     else
                         UIManager:show(InfoMessage:new({
                             text = T("Failed to fetch data for pseud: '%1'", pseud.name),

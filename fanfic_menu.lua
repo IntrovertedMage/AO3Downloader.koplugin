@@ -70,6 +70,11 @@ function FanficMenuWidget:updateMenuBack(backAmount, newTitle, newItems, newSubt
     self.paths[index].subtitle = newSubtitle or currentBackMenu.subtitle
 end
 
+function FanficMenuWidget:onClose()
+    self.Fanfic.menu_stack[self] = nil
+    return Menu.onClose(self)
+end
+
 local FanficMenu = {}
 
 function FanficMenu:show(fanfic)
@@ -102,7 +107,10 @@ function FanficMenu:show(fanfic)
                 end,
             },
         },
+        Fanfic = self.fanfic,
     })
+
+    self.fanfic.menu_stack[self.menuWidget] = true
 
     return self.menuWidget
 end
@@ -483,7 +491,6 @@ function FanficMenu:onBrowseByTag(selectedTag)
                     end
 
                     self.fanfic:onShowFanficBrowser(
-                        self.menuWidget,
                         ficResults,
                         fetchNextPage
                     )

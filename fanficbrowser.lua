@@ -12,7 +12,6 @@ local T = FFIUtil.template
 
 local FanficBrowser = {
     ui = nil,
-    parentMenu = nil,
     browse_window = nil,
     updateFanficCallback = nil,
     downloadFanficCallback = nil,
@@ -106,13 +105,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                     text = _("Open"),
                                     callback = function()
                                         UIManager:close(dialog)
-                                        self.browse_window:onClose()
-                                        self.parentMenu:onClose()
-                                        FanficReader:show({
-                                            fanfic_path = downloadedFanfic.path,
-                                            current_fanfic = downloadedFanfic,
-                                            chapter_opening_at = nil,
-                                        })
+                                        self.Fanfic:onOpenFanficReader(downloadedFanfic.path, downloadedFanfic)
                                     end,
                                 },
                                 {
@@ -153,7 +146,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                         text = util.trim(author),
                         callback = function()
                                 UIManager:close(dialog)
-                                self.showAuthorInfoCallback(util.trim(author), self.parentMenu)
+                                self.showAuthorInfoCallback(util.trim(author))
                         end,
                     }})
                 end
@@ -165,7 +158,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                         text = util.trim(giftee) .. " (Giftee)",
                         callback = function()
                                 UIManager:close(dialog)
-                                self.showAuthorInfoCallback(util.trim(giftee), self.parentMenu)
+                                self.showAuthorInfoCallback(util.trim(giftee))
                         end,
                     }})
                 end
@@ -252,8 +245,7 @@ function FanficBrowser:showDownloadDialog(fanfic)
                     text = "Yes",
                     callback = function()
                         UIManager:scheduleIn(1, function()
-                            self.downloadFanficCallback(tonumber(fanfic.id), self.browse_window)
-                            self.browse_window:reload()
+                            self.downloadFanficCallback(fanfic.id)
                         end)
                         UIManager:show(InfoMessage:new({
                             text = _("Downloading work may take some time…"),
@@ -293,21 +285,20 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
     UIManager:show(warningDialog)
 end
 
-function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback)
+function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback, Fanfic)
     self.ui = ui
     self.updateFanficCallback = updateFanficCallback
     self.downloadFanficCallback = downloadFanficCallback
     self.showAuthorInfoCallback = showAuthorInfoCallback
-    self.parentMenu = parentMenu
+    self.Fanfic = Fanfic
 
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
     local total_fic_count = ficResults.total
     ficResults.total = nil
     self.fanfics_loaded = ficResults
+    require("logger").dbg(ficResults)
 
     local BrowseWindow = KeyValuePage:extend({
-        parentMenu = nil,
-        preventParentClose = nil,
     })
     -- Override _populateItems to check if it's the last page and load more results
     local originalPopulateItems = KeyValuePage._populateItems
@@ -343,11 +334,8 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             kv_pairs = selfself.kv_pairs,
             show_page = selfself.show_page,
             value_overflow_align = "center",
-            parentMenu = selfself.parentMenu,
-            preventParentClose = true,
         })
         self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
@@ -365,11 +353,8 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             kv_pairs = selfself.kv_pairs,
             show_page = selfself.show_page,
             value_overflow_align = "center",
-            parentMenu = selfself.parentMenu,
-            preventParentClose = true,
         })
         self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
@@ -383,7 +368,10 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         selfself:_populateItems()
     end
 
-
+    BrowseWindow.onClose = function(selfself)
+        self.Fanfic.menu_stack[selfself] = nil
+        return KeyValuePage.onClose(selfself)
+    end
 
     self.items_per_fic = 14
     -- Create the KeyValuePage
@@ -393,14 +381,13 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         is_popout = false,
         is_borderless = true,
         kv_pairs = kv_pairs,
-        parentMenu = parentMenu,
         value_overflow_align = "center",
-        preventParentClose = true,
         show_page = 1,
     })
 
+    self.Fanfic.menu_stack[self.browse_window] = true
+
     self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-    self.parentMenu.browse_window = self.browse_window
 
     UIManager:show(self.browse_window)
 end

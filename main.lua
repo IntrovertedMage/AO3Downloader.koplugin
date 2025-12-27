@@ -19,6 +19,7 @@ local AO3DownloaderClient = require("AO3_downloader_client")
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
     is_doc_only = false,
+    menu_stack = {}
 }
 
 function Fanfic:init()
@@ -64,6 +65,26 @@ function Fanfic:onOpenAO3DownloaderMenu()
     UIManager:show(self.menu)
 end
 
+function Fanfic:onOpenFanficReader(fanfic_path, current_fanfic, start_chapter)
+    self:closeAllMenus()
+    FanficReader:show({
+        fanfic_path = fanfic_path,
+        current_fanfic = current_fanfic,
+        start_chapter = start_chapter,
+    })
+end
+
+function Fanfic:closeAllMenus()
+    local count = 0
+    for menu_widget, _ in pairs(self.menu_stack) do
+        if menu_widget then
+            UIManager:close(menu_widget)
+            count = count + 1
+        end
+    end
+    self.menu_stack = {}
+end
+
 function Fanfic.GenerateFileName(metadata)
     local template = Config:readSetting("filename_template", "%I")
     -- local template = "%T--%A--(%I)"
@@ -74,6 +95,35 @@ function Fanfic.GenerateFileName(metadata)
         ["%A"] = metadata.author:gsub("%s+", "_"),
     }
     return template:gsub("(%%%a)", replace)
+end
+
+function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage)
+    logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
+    FanficBrowser:show(
+        self.ui,
+        ficResults,
+        fetchNextPage,
+        function(fanfic) self:UpdateFanfic(fanfic) end, -- Update callback
+        function(fanficId) self:DownloadFanfic(fanficId) end, -- Download callback
+        function (author)
+            -- Check if author contains pseud, if yes parse the pseud (format: "pseeud (username)" or username)
+            local username
+            local pseud
+
+            if string.find(author, "%(") and string.find(author, "%)") then
+                username = string.match(author, "%((.-)%)")
+                pseud = string.match(author, "^(.-)%s*%(")
+            else
+                username = author
+                pseud = author
+            end
+            logger.dbg("Opening user browser for author: " .. username .. " pseud: " .. pseud)
+            self:showUserInfo(username, pseud)
+
+        end,-- Open author user browser callback
+        self
+    )
+
 end
 
 function Fanfic:DownloadFanfic(id)
@@ -157,16 +207,7 @@ function Fanfic:DownloadFanfic(id)
         text = T(_("File saved to:\n%1\nWould you like to read the downloaded work now?"), BD.filepath(fanfic.path)),
         ok_text = _("Read now"),
         ok_callback = function()
-            if self.menu.browse_window then
-                self.menu.browse_window:onClose()
-            end
-
-            self.menu:onClose()
-            FanficReader:show({
-                fanfic_path = fanfic.path,
-                current_fanfic = fanfic,
-            })
-
+            self:onOpenFanficReader(fanfic.path, fanfic)
         end,
     })
 end
@@ -343,33 +384,6 @@ function Fanfic:executeSearch(parameters)
     return true, request_result.works, fetchNextPage
 end
 
-function Fanfic:onShowFanficBrowser(parentMenu, ficResults, fetchNextPage)
-    logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
-    FanficBrowser:show(
-        self.ui,
-        parentMenu,
-        ficResults,
-        fetchNextPage,
-        function(fanfic) self:UpdateFanfic(fanfic) end, -- Update callback
-        function(fanficId, parentMenu) self:DownloadFanfic(fanficId, parentMenu) end, -- Download callback
-        function (author, parentMenu)
-            -- Check if author contains pseud, if yes parse the pseud (format: "pseeud (username)" or username)
-            local username
-            local pseud
-
-            if string.find(author, "%(") and string.find(author, "%)") then
-                username = string.match(author, "%((.-)%)")
-                pseud = string.match(author, "^(.-)%s*%(")
-            else
-                username = author
-                pseud = author
-            end
-            logger.dbg("Opening user browser for author: " .. username .. " pseud: " .. pseud)
-            self:showUserInfo(username, pseud, parentMenu)
-
-        end -- Open author user browser callback
-    )
-end
 
 function Fanfic:searchForUsers(query)
     local NetworkMgr = require("ui/network/manager")
@@ -412,7 +426,7 @@ function Fanfic:searchForUsers(query)
     return true,search_results.result_users, getNextPage
 end
 
-function Fanfic:showUserInfo(username, pseud, parentMenu)
+function Fanfic:showUserInfo(username, pseud)
     local AO3UserBrowser = require("AO3_user_browser")
     local request_result = AO3DownloaderClient:getUserData(username, pseud)
     if not request_result.success then
@@ -421,7 +435,7 @@ function Fanfic:showUserInfo(username, pseud, parentMenu)
         })
         return
     end
-    AO3UserBrowser:show(request_result.user_data, self.ui, parentMenu, self)
+    AO3UserBrowser:show(request_result.user_data, self.ui, self)
 end
 
 function Fanfic:getUserData(username, pseud)
