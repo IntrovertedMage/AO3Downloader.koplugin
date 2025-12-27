@@ -557,6 +557,39 @@ function AO3DownloaderClient:searchForTags(search_query, tag_type)
 
 end
 
+function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
+    logger.dbg("AO3Downloader.koplugin: Fetching works from series ID: " .. tostring(series_id) .. ", page no: " .. tostring(page_no))
+    page_no = page_no or 1
+    local url = T("%1/series/%2?page=%3", getAO3URL(), series_id, page_no)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch series works. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+
+    local root = htmlparser.parse(html_body)
+
+    local works = AO3WebParser:parseWorkSearchResults(root)
+
+    return {
+        success = true,
+        works = works,
+    }
+end
+
 function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
     local url
     if catagory == "gifts" then
@@ -693,6 +726,42 @@ function AO3DownloaderClient:getUserData(username, pseud)
         user_data = user_data,
     }
 
+end
+
+function AO3DownloaderClient:getUserPseuds(username)
+    local url = T("%1/users/%2/pseuds", getAO3URL(), username)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if request_result.status == 404 then
+        return {
+            success = false,
+            error = T("User '%1' not found.", username),
+        }
+    end
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch user pseuds. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+    local root = htmlparser.parse(html_body)
+    local pseuds = AO3WebParser:parseUserPseuds(root)
+
+    return {
+        success = true,
+        pseuds = pseuds,
+    }
 end
 
 function AO3DownloaderClient:searchForUsers(search_query, page_no)
@@ -1026,7 +1095,7 @@ function AO3WebParser:parseUserSeriesPage(root)
 
             local dateElement = element:select(".datetime")[1]
 
-            local date_posted = dateElement and encodeHelper:parseToCodepoints(dateElement.attributes["title"]) or ""
+            local date_posted = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or ""
 
             local fandomElements = element:select(".fandoms > a")
             local fandoms = {}
@@ -1537,6 +1606,16 @@ function AO3WebParser:parseUserPage(root)
         pseud = author_full
     end
 
+    local total_pseuds_search = T("a[href$='%1/pseuds']", username)
+    local total_pseuds_element = root:select(total_pseuds_search)[1]
+
+    local total_pseuds = nil
+    if total_pseuds_element then
+        local total_pseuds_text = total_pseuds_element:getcontent()
+        total_pseuds = total_pseuds_text:match("All Pseuds%s*%((%d+)%)")
+
+        total_pseuds = tonumber(total_pseuds)
+    end
 
     local total_works_search = T("[href$='%1/works']", pseud)
     local total_works_element = root:select(total_works_search)[1]
@@ -1599,12 +1678,54 @@ function AO3WebParser:parseUserPage(root)
         username = username,
         pseud = pseud,
         fandoms = fandom_list,
+        total_pseuds = total_pseuds or 1,
         total_works = total_works or 0,
         total_series = total_series or 0,
         total_bookmarks = total_bookmarks or 0,
         total_collections = total_collections or 0,
         total_gifts = total_gifts or 0,
     }
+end
+
+function AO3WebParser:parseUserPseuds(root)
+    local pseuds = {}
+    local elements = root:select("li.pseud")
+
+    local count = 1
+
+    for _, element in ipairs(elements) do
+        local pseudElement = element:select("h4.heading > a")[1]
+        if pseudElement then
+            local pseud_name = encodeHelper:parseToCodepoints(pseudElement:getcontent())
+
+            local worksElement = element:select("h5.heading > a[href$='/works']")[1]
+            local recsElement = element:select("h5.heading > a[href$='recs_only=true']")[1]
+
+            local work_count = nil
+            local rec_count = nil
+
+            if worksElement then
+                local works_text = worksElement:getcontent()
+                work_count = tonumber(works_text:match("([%d,]+) works"):gsub(",", ""), 10)
+            end
+
+            if recsElement then
+                local recs_text = recsElement:getcontent()
+                rec_count = tonumber(recs_text:match("([%d,]+) rec"):gsub(",", ""), 10)
+            end
+
+            local pseud = {
+                name = pseud_name,
+                works_count = work_count or 0,
+                recs_count = rec_count or 0,
+            }
+
+            table.insert(pseuds, count, pseud)
+            count = count + 1
+        end
+    end
+
+    return pseuds
 end
 
 function AO3WebParser:parseUserSearchResults(root)

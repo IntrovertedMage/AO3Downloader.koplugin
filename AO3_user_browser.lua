@@ -4,6 +4,7 @@ local UIManager = require("ui/uimanager")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local logger = require("logger")
+local InfoMessage = require("ui/widget/infomessage")
 
 local AO3UserBrowser = {
     Fanfic = nil,
@@ -11,7 +12,32 @@ local AO3UserBrowser = {
     uiManager = nil,
     parentMenu = nil,
     menu = nil,
+    menu_layers = {},
 }
+
+local UserWindow = KeyValuePage:extend{
+    title = "",
+    kv_pairs = {},
+}
+
+function AO3UserBrowser:GoDownInMenu(new_title, new_keypairs)
+    local current_state = {
+        title = self.AO3UserWindow.title,
+        kv_pairs = self.AO3UserWindow.kv_pairs,
+    }
+    table.insert(self.menu_layers, current_state)
+
+    self:loadPage(new_title, new_keypairs)
+end
+
+function AO3UserBrowser:GoUpInMenu()
+    local previousState = self.menu_layers[#self.menu_layers]
+    self.menu_layers[#self.menu_layers] = nil
+    if previousState then
+        self:loadPage(previousState.title, previousState.kv_pairs)
+    end
+end
+
 
 function AO3UserBrowser:show(userData, ui, parentMenu, fanfic)
     self.userData = userData
@@ -19,14 +45,7 @@ function AO3UserBrowser:show(userData, ui, parentMenu, fanfic)
     self.ui = ui
     self.Fanfic = fanfic
 
-    local menuTable = self:generateMenuTable()
-
-    UserWindow = KeyValuePage:extend{
-        title = "",
-        kv_pairs = {},
-    }
-
-    self:loadPage()
+    self:reloadProfile()
 
 
 end
@@ -82,12 +101,23 @@ function AO3UserBrowser:generateMenuTable()
                 }))
             end
 
-            self:loadPage()
+            self:reloadProfile()
         end,
         separator = true,
     }
 
     table.insert(kv_pairs, bookmark_user_item)
+
+    local pseuds_item = {
+        "Other Pseuds:",
+        self.userData.total_pseuds,
+        callback = function()
+            self:openPseudsList()
+        end,
+        separator = true,
+    }
+
+    table.insert(kv_pairs, pseuds_item)
 
     local all_works_item = {
         "Works:",
@@ -107,7 +137,7 @@ function AO3UserBrowser:generateMenuTable()
         end,
     }
 
-    -- table.insert(kv_pairs, series_item)
+    table.insert(kv_pairs, series_item)
 
     local bookmarks_item = {
         "Bookmarked works:",
@@ -164,20 +194,28 @@ function AO3UserBrowser:generateMenuTable()
     return kv_pairs
 end
 
-function AO3UserBrowser:loadPage()
-    if self.AO3UserWindow then
-        UIManager:close(self.AO3UserWindow)
-    end
+function AO3UserBrowser:reloadProfile()
     local author_string
+    self.menu_layers = {}
+
     if self.userData.pseud ~= self.userData.username then
         author_string = T("%1 (%2)", self.userData.pseud, self.userData.username)
     else
         author_string = self.userData.username
     end
 
+    local new_menu_table = self:generateMenuTable()
+    self:loadPage(author_string, new_menu_table)
+end
+
+function AO3UserBrowser:loadPage(title, menu_table)
+    if self.AO3UserWindow then
+        UIManager:close(self.AO3UserWindow)
+    end
+
     self.AO3UserWindow = UserWindow:new({
-        title = "AO3 User: " .. author_string,
-        kv_pairs = self:generateMenuTable(),
+        title = title,
+        kv_pairs = menu_table,
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,
@@ -199,7 +237,104 @@ end
 function AO3UserBrowser:openUserSeriesList()
     local success, seriesList = self.Fanfic:getSeriesFromUserPage(self.userData.username)  --
     if success then
-        logger.dbg(seriesList)
+        local series_menu_kv = {}
+        table.insert(series_menu_kv, {
+            "<- Back to profile",
+            "",
+            separator = true,
+            callback = function()
+                self:GoUpInMenu()
+            end,
+        })
+        for __, series in pairs(seriesList) do
+            series_menu_kv[#series_menu_kv].separator = true
+
+            table.insert(series_menu_kv, {
+                series.title,
+                "",
+                callback = function()
+                    local success, seriesWorks, fetchNextPage = self.Fanfic:getWorksFromSeries(series.id)
+                    if success == false then
+                        return
+                    end
+
+                    seriesWorks.total = series.work_count or 0
+                    self.Fanfic:onShowFanficBrowser(self.parentMenu, seriesWorks, fetchNextPage)
+                end,
+                seperator = true,
+            })
+            table.insert(series_menu_kv,{
+                "Fandoms:"
+                , table.concat(series.fandoms, ", "),
+            })
+            table.insert(series_menu_kv,{
+                "Work count:"
+                , series.work_count,
+            })
+            table.insert(series_menu_kv,{
+                "Word count:"
+                , series.word_count,
+            })
+            table.insert(series_menu_kv,{
+                "Author:"
+                , series.author,
+            })
+            table.insert(series_menu_kv,{
+                "Date:"
+                , series.date_posted,
+            })
+            if series.summary and series.summary ~= "" then
+                table.insert(series_menu_kv,{
+                    "Summary:"
+                    , series.summary,
+                })
+            end
+        end
+
+        self:GoDownInMenu("Series", series_menu_kv)
+    end
+end
+
+function AO3UserBrowser:openPseudsList()
+    local success, pseuds = self.Fanfic:getPseudsForUser(self.userData.username)
+    if success then
+        local pseuds_menu_kv = {}
+
+        table.insert(pseuds_menu_kv, {
+            "<- Back to profile",
+            "",
+            separator = true,
+            callback = function()
+                self:GoUpInMenu()
+            end,
+        })
+
+        for __, pseud in pairs(pseuds) do
+            table.insert(pseuds_menu_kv, {
+                T("%1 (%2 works) (%3 recs)", pseud.name, pseud.works_count, pseud.recs_count),
+                "",
+                callback = function()
+                    local success, userData = self.Fanfic:getUserData(self.userData.username, pseud.name)
+                    if success then
+                        self:show(userData, self.ui, self.parentMenu, self.Fanfic)
+                    else
+                        UIManager:show(InfoMessage:new({
+                            text = T("Failed to fetch data for pseud: '%1'", pseud.name),
+                        }))
+                    end
+                end,
+            })
+
+        end
+
+        pseuds_menu_kv[#pseuds_menu_kv].separator = true
+
+
+        self:GoDownInMenu("Other Pseuds", pseuds_menu_kv)
+    else
+        UIManager:show(InfoMessage:new({
+            text = T("Failed to fetch pseuds for user: '%1'", self.userData.username),
+        }))
     end
 end
 

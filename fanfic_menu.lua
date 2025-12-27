@@ -123,6 +123,12 @@ function FanficMenu:refreshAccountManagementMenu()
         })
     else
         table.insert(menu_items, {
+            text = "View your AO3 profile",
+            callback = function()
+                self.fanfic:showUserInfo(self.username, self.username, self.menuWidget)
+            end,
+        })
+        table.insert(menu_items, {
             text = "Log out",
             callback = function()
                 self.logged_in = not self.fanfic:logoutOfAO3()
@@ -526,7 +532,7 @@ function FanficMenu:onSelectUserSearch()
                         buttons = {
                             {
                                 {
-                                    text = _("Search User"),
+                                    text = _("View user profile"),
                                     callback = function()
                                         local username, pseud
                                         if string.find(user, "%(") and string.find(user, "%)") then
@@ -612,7 +618,7 @@ function FanficMenu:onSearchUser()
                                             buttons = {
                                                 {
                                                     {
-                                                        text = _("View User"),
+                                                        text = _("View user profile"),
                                                         callback = function()
                                                             self.fanfic:showUserInfo(user.username, user.pseud, self.menuWidget)
                                                             UIManager:close(dialog)

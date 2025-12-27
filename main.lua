@@ -421,8 +421,25 @@ function Fanfic:showUserInfo(username, pseud, parentMenu)
         })
         return
     end
-    logger.dbg(request_result.user_data)
     AO3UserBrowser:show(request_result.user_data, self.ui, parentMenu, self)
+end
+
+function Fanfic:getUserData(username, pseud)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local user_data_result = AO3DownloaderClient:getUserData(username, pseud)
+    if not user_data_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch user data: " .. (user_data_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    return true, user_data_result.user_data
+
 end
 
 function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
@@ -465,6 +482,24 @@ function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
 
 end
 
+function Fanfic:getPseudsForUser(username)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local pseuds_result = AO3DownloaderClient:getUserPseuds(username)
+    if not pseuds_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch pseuds for user: " .. (pseuds_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    return true, pseuds_result.pseuds
+
+end
+
 function Fanfic:getSeriesFromUserPage(username)
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isConnected() then
@@ -480,6 +515,47 @@ function Fanfic:getSeriesFromUserPage(username)
     end
 
     return true, series_result.series
+
+end
+
+function Fanfic:getWorksFromSeries(series_id)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local works_result = AO3DownloaderClient:getWorksFromSeries(series_id)
+    if not works_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch works from series: " .. (works_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    local currentpage = 1
+
+    local function fetchNextPage()
+        currentpage = currentpage + 1
+        local next_page_result = AO3DownloaderClient:getWorksFromSeries(series_id, currentpage)
+        if not next_page_result.success then
+            currentpage = currentpage - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch works from series: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more works to fetch
+        if #next_page_result.works == 0 then
+            currentpage = currentpage - 1
+            return {}
+        end
+
+        return  next_page_result.works
+
+    end
+
+    return true, works_result.works, fetchNextPage
 
 end
 
