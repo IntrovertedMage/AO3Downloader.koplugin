@@ -1147,7 +1147,12 @@ function AO3WebParser:parseUserSeriesPage(root)
             end
 
             local summaryElement = element:select(".summary")[1]
-            local summary = summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()) or ""
+            local summary = summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
+                :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                :gsub("<[^>]+>", "") -- Remove other HTML tags
+                :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
+            )
 
             local wordCountElement = element:select("dd.words")[1]
             logger.dbg(wordCountElement and wordCountElement:getcontent():gsub(",", "") or "No word count element found")
@@ -1585,8 +1590,7 @@ function AO3WebParser:parseUserPage(root)
 
     for _, fandom in pairs(user_fandoms) do
         local name = encodeHelper:parseToCodepoints(fandom:select("a")[1]:getcontent())
-        --TODO: Fix count extraction for when fandom name containes parenthses with number (e.g. "Fandom (2020)")
-        local count = fandom:getcontent():match("%((%d+)%)")
+        local count = fandom:getcontent():gsub("<a[^>]*>.-</a>", ""):match("%((%d+)%)")
         local fandom_id = fandom:select("a")[1].attributes.href:match("fandom_id=(%d+)")
         if name then
             table.insert(fandom_list, {name = name, count = count and tonumber(count) or 0, id = fandom_id})
