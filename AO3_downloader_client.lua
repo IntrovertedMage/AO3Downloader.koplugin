@@ -471,7 +471,7 @@ function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
 
     local encoded_tag_name = tag_name
         :gsub("/", "*s*")
-        :gsub(" & ", "*a*")
+        :gsub("&", "*a*")
 
     encoded_tag_name = encodeHelper:urlEncode(encoded_tag_name)
 
