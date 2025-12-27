@@ -10,7 +10,14 @@ local util = require("util")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 
-local FanficBrowser = {}
+local FanficBrowser = {
+    ui = nil,
+    browse_window = nil,
+    updateFanficCallback = nil,
+    downloadFanficCallback = nil,
+    showAuthorInfoCallback = nil,
+}
+
 
 function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback, downloadFanficCallback)
     -- Helper function to check if a fanfic is already downloaded
@@ -37,6 +44,15 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
     -- Populate the initial list of fanfics
     for __, v in pairs(ficResults) do
         if __ == "total" then
+            goto continue
+        end
+
+        if v.is_deleted then
+            table.insert(kv_pairs, { "DELETED WORK", "", separator = true })
+            for i = 1, 12 do
+                table.insert(kv_pairs, { "", "" })
+            end
+            table.insert(kv_pairs, { "", "", separator = true })
             goto continue
         end
         -- Normalize relationships, characters, and tags
@@ -89,13 +105,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                                     text = _("Open"),
                                     callback = function()
                                         UIManager:close(dialog)
-                                        self.browse_window:onClose()
-                                        self.parentMenu:onClose()
-                                        FanficReader:show({
-                                            fanfic_path = downloadedFanfic.path,
-                                            current_fanfic = downloadedFanfic,
-                                            chapter_opening_at = nil,
-                                        })
+                                        self.Fanfic:onOpenFanficReader(downloadedFanfic.path, downloadedFanfic)
                                     end,
                                 },
                                 {
@@ -123,7 +133,57 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
         table.insert(kv_pairs, title_item)
         -- Add additional details about the fanfic
-        table.insert(kv_pairs, { "     " .. "Author:", v.author })
+        table.insert(kv_pairs, { "     " .. "Author:", (v.author or "Anonymous") .. (v.gifted_to and (" (Gifted to: " .. v.gifted_to .. ")") or "") ,
+        callback = function()
+
+            local buttons = {}
+
+            local dialog
+
+            if v.author then
+                for author in string.gmatch(v.author, '([^,]+)') do
+                    table.insert(buttons, {{
+                        text = util.trim(author),
+                        callback = function()
+                                UIManager:close(dialog)
+                                self.showAuthorInfoCallback(util.trim(author))
+                        end,
+                    }})
+                end
+            end
+
+            if v.gifted_to then
+                for giftee in string.gmatch(v.gifted_to, '([^,]+)') do
+                    table.insert(buttons, {{
+                        text = util.trim(giftee) .. " (Giftee)",
+                        callback = function()
+                                UIManager:close(dialog)
+                                self.showAuthorInfoCallback(util.trim(giftee))
+                        end,
+                    }})
+                end
+            end
+
+            -- If no buttons were created, just return
+            if #buttons == 0 then
+                return
+            end
+
+            table.insert(buttons,{{
+                text = _("Close"),
+                callback = function()
+                    UIManager:close(dialog)
+                end,
+            }})
+
+            dialog = ButtonDialog:new({
+
+                title = T("Work %1: %2", string.find(v.author, ",") and "authors" or "author", v.author),
+                buttons = buttons,
+            })
+            UIManager:show(dialog)
+        end,
+        })
         table.insert(kv_pairs, { "     " .. "Rating:", v.rating })
         table.insert(
             kv_pairs,
@@ -157,10 +217,10 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         -- Combine comments, kudos, bookmarks, and hits into one line
         local stats = string.format(
             "Hits: %s | Kudos: %s | Bookmarks: %s | Comments: %s",
-            v.comments or "0",
+            v.hits or "0",
             v.kudos or "0",
             v.bookmarks or "0",
-            v.hits or "0"
+            v.comments or "0"
         )
         table.insert(kv_pairs, { "     " .. "Stats:", stats, separator = true })
         ::continue::
@@ -185,8 +245,7 @@ function FanficBrowser:showDownloadDialog(fanfic)
                     text = "Yes",
                     callback = function()
                         UIManager:scheduleIn(1, function()
-                            self.downloadFanficCallback(tonumber(fanfic.id), self.browse_window)
-                            self.browse_window:reload()
+                            self.downloadFanficCallback(fanfic.id)
                         end)
                         UIManager:show(InfoMessage:new({
                             text = _("Downloading work may take some time…"),
@@ -226,20 +285,20 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
     UIManager:show(warningDialog)
 end
 
-function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback)
+function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback, Fanfic)
     self.ui = ui
     self.updateFanficCallback = updateFanficCallback
     self.downloadFanficCallback = downloadFanficCallback
-    self.parentMenu = parentMenu
+    self.showAuthorInfoCallback = showAuthorInfoCallback
+    self.Fanfic = Fanfic
 
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
     local total_fic_count = ficResults.total
     ficResults.total = nil
     self.fanfics_loaded = ficResults
+    require("logger").dbg(ficResults)
 
     local BrowseWindow = KeyValuePage:extend({
-        parentMenu = nil,
-        preventParentClose = nil,
     })
     -- Override _populateItems to check if it's the last page and load more results
     local originalPopulateItems = KeyValuePage._populateItems
@@ -275,11 +334,8 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             kv_pairs = selfself.kv_pairs,
             show_page = selfself.show_page,
             value_overflow_align = "center",
-            parentMenu = selfself.parentMenu,
-            preventParentClose = true,
         })
         self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
@@ -297,11 +353,8 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
             kv_pairs = selfself.kv_pairs,
             show_page = selfself.show_page,
             value_overflow_align = "center",
-            parentMenu = selfself.parentMenu,
-            preventParentClose = true,
         })
         self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-        self.parentMenu.browse_window = self.browse_window
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
@@ -315,7 +368,10 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         selfself:_populateItems()
     end
 
-
+    BrowseWindow.onClose = function(selfself)
+        self.Fanfic.menu_stack[selfself] = nil
+        return KeyValuePage.onClose(selfself)
+    end
 
     self.items_per_fic = 14
     -- Create the KeyValuePage
@@ -325,14 +381,13 @@ function FanficBrowser:show(ui, parentMenu, ficResults, fetchNextPage, updateFan
         is_popout = false,
         is_borderless = true,
         kv_pairs = kv_pairs,
-        parentMenu = parentMenu,
         value_overflow_align = "center",
-        preventParentClose = true,
         show_page = 1,
     })
 
+    self.Fanfic.menu_stack[self.browse_window] = true
+
     self.browse_window:setMaximumPageValueCount(self.items_per_fic)
-    self.parentMenu.browse_window = self.browse_window
 
     UIManager:show(self.browse_window)
 end
