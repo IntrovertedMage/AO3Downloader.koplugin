@@ -297,7 +297,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local total_fic_count = ficResults.total
     ficResults.total = nil
     self.fanfics_loaded = ficResults
-    require("logger").dbg(ficResults)
 
     local BrowseWindow = KeyValuePage:extend({
     })

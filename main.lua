@@ -127,7 +127,6 @@ end
 function Fanfic:DownloadFanfic(id)
     local NetworkMgr = require("ui/network/manager")
 
-    logger.dbg("id:" .. id)
     if not NetworkMgr:isConnected() then
         NetworkMgr:runWhenConnected(function () self:DownloadFanfic(id) end)
         return
@@ -309,7 +308,6 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
     -- Define the function to fetch the next page for the selected fandom
     local function fetchNextPage()
         currentPage = currentPage + 1
-        logger.dbg("fetching page:"..currentPage)
         local next_page_results =  AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
         if not next_page_results.success then
             UIManager:show(InfoMessage:new{
