@@ -135,11 +135,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                     DownloadedFanfics.update(fanfic) -- Save the updated metadata
                                                     if (not fanfic.chapter_data) or #fanfic.chapter_data == 0 then
                                                         UIManager:close(dialog)
-                                                        ---@diagnostic disable-next-line: missing-fields
-                                                        FanficReader:show({
-                                                            fanfic_path = fanfic.path,
-                                                            current_fanfic = fanfic,
-                                                        })
+                                                        self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
                                                     else
                                                         local open_method
                                                         open_method = ButtonDialog:new({
@@ -150,11 +146,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                                         callback = function()
                                                                             UIManager:close(dialog)
                                                                             UIManager:close(open_method)
-                                                                            ---@diagnostic disable-next-line: missing-fields
-                                                                            FanficReader:show({
-                                                                                fanfic_path = fanfic.path,
-                                                                                current_fanfic = fanfic,
-                                                                            })
+                                                                            self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
                                                                         end,
                                                                     },
                                                                 },
@@ -367,11 +359,7 @@ function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
         table.insert(chapter_options, {
             text = (chapter.read and "✓ " or "") .. chapter.name,
             callback = function()
-                self.Fanfic:onOpenFanficReader({
-                    fanfic_path = fanfic.path,
-                    current_fanfic = fanfic,
-                    start_chapter = idx,
-                })
+                self.Fanfic:onOpenFanficReader(fanfic.path, fanfic, idx)
             end,
         })
     end

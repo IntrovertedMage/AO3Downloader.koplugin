@@ -75,11 +75,9 @@ function Fanfic:onOpenFanficReader(fanfic_path, current_fanfic, start_chapter)
 end
 
 function Fanfic:closeAllMenus()
-    local count = 0
     for menu_widget, _ in pairs(self.menu_stack) do
         if menu_widget then
             UIManager:close(menu_widget)
-            count = count + 1
         end
     end
     self.menu_stack = {}

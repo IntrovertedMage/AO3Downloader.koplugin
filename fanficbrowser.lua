@@ -246,6 +246,7 @@ function FanficBrowser:showDownloadDialog(fanfic)
                     callback = function()
                         UIManager:scheduleIn(1, function()
                             self.downloadFanficCallback(fanfic.id)
+                            self.browse_window:reload()
                         end)
                         UIManager:show(InfoMessage:new({
                             text = _("Downloading work may take some time…"),
@@ -345,6 +346,9 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
         -- Update the total number of pages
         selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
+        if (self.browse_window) then
+            self.Fanfic.menu_stack[self.browse_window] = nil
+        end
         self.browse_window = BrowseWindow:new({
             title = selfself.title,
             title_bar_fm_style = true,
@@ -354,6 +358,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             show_page = selfself.show_page,
             value_overflow_align = "center",
         })
+        self.Fanfic.menu_stack[self.browse_window] = true
         self.browse_window:setMaximumPageValueCount(self.items_per_fic)
         UIManager:show(self.browse_window)
         UIManager:close(selfself)

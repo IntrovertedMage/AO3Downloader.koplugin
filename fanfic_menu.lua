@@ -261,7 +261,7 @@ function FanficMenu:onQuickSearchMenu()
 end
 
 function FanficMenu:onShowFanficSearch()
-    FanficSearch:show(self.menuWidget, function(fanficId)
+    FanficSearch:show(function(fanficId)
         self.fanfic:DownloadFanfic(fanficId)
     end)
 end
@@ -509,7 +509,7 @@ end
 function FanficMenu:onViewDownloadedFanfics()
     DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, function(fanfic)
         self.fanfic:UpdateFanfic(fanfic)
-    end)
+    end, self.fanfic)
 end
 
 function FanficMenu:onSelectUserSearch()
