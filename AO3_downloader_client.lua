@@ -380,7 +380,6 @@ function AO3DownloaderClient:downloadEpub(download_link, filepath)
         }
     end
 
-    --  TODO: check for valid Path
     local file, err = io.open(filepath, "w")
     if err then
         return {
