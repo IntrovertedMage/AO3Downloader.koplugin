@@ -3,25 +3,48 @@ The plugins menu is found under the search tab in the top menu on the second pag
 
 ## Features
 - Browse and download from AO3 by either a singular tag or a detailed filter
-- Download works by there id
+- Download works by their id
 - Update and delete downloaded works from the download menu
 - Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
+- Search for and open users profiles and download the users works, series, bookmarks and gifted works.
+  - Profiles can also be open from the work search results menu by tapping the author category
 
 ## Features I want to work on
-- Support using a AO3 account
-- Commenting and giving kudos to works right from the plugin
-- View all the works by a certain author
+- ~~Support using a AO3 account~~ - done 
+- ~~Commenting and giving kudos to works right from the plugin~~ - done
+- ~~View all the works by a certain author~~ - done
 - Show tag bookmarks in the filter tag search menus
 - Search by tags by both tapping on them in the fanfic browser menu and tapping the tags link within the epub itself
-  
+- Open a new search for works containing a certain tag by tapping the tags link in an open fanfic file
+- Open up a users profile by tapping on the users link in an open fanfic file
+- Improve downloaded works menu
+- View and manage series, user and works subscriptions when logged in
+- Option to use cookies as alternative login method
+- Support for collections
+- Mass download all works in series/ certain amount of works in work search results
+
 ## Screenshots
-![Screenshot from 2025-04-14 17-52-39](https://github.com/user-attachments/assets/b87e13a7-ff8b-49ee-94df-650bfa9c5f43)
-![Screenshot from 2025-04-14 17-52-48](https://github.com/user-attachments/assets/88d4d4fb-9b90-4fb6-9ca0-b4b4a56c7cc8)
-![Screenshot from 2025-04-14 17-52-55](https://github.com/user-attachments/assets/1f4a840d-fe36-4bf7-af8c-56f0e16abd56)
-![Screenshot from 2025-04-14 17-53-03](https://github.com/user-attachments/assets/9ed1d636-37ef-429c-8801-c35cb961fab7)
-![Screenshot from 2025-04-14 17-53-42](https://github.com/user-attachments/assets/41c317f8-a8e1-4843-824e-7667932ec984)
-![Screenshot from 2025-04-14 17-53-50](https://github.com/user-attachments/assets/a1952872-e422-405d-b69b-f7d04b0add3f)
-![Screenshot from 2025-04-14 17-54-28](https://github.com/user-attachments/assets/312db523-a3b1-42f1-891a-a335bbb2ce0e)
-![Screenshot from 2025-04-14 17-55-04](https://github.com/user-attachments/assets/cccb46b4-c818-44d7-8d81-a6e6ccc2987e)
-![Screenshot from 2025-04-14 17-55-11](https://github.com/user-attachments/assets/577d2735-e5ba-4bc2-b5fd-2ebc2ded5dbf)
-![Screenshot from 2025-04-14 17-55-23](https://github.com/user-attachments/assets/f6efcc03-8eba-47f8-8344-e445231bdb03)
+![plugin-open](example-images/plugin-open.png)
+![main-menu](example-images/main-menu.png)
+![search-mode-menu](example-images/search-mode-menu.png)
+
+### Quick search
+![quick-search-menu](example-images/quick-serach-mode-menu.png)
+![fandom-tag-menu](example-images/fandom-tag-menu.png)
+![sort-by](example-images/sort-by-menu.png)
+![fanfic-browser](example-images/fanfic-browser-menu.png)
+
+### Filter search
+![filter-1](example-images/filter-sample-1.png)
+![filter-2](example-images/filter-sample-2.png)
+![filter-3](example-images/filter-sample-3.png)
+
+### Reader menu
+![interactions-menu](example-images/interactions-menu.png)
+
+### Downloaded works menu
+![download-menu](example-images/download-menu.png)
+
+### Profile
+![fanfic-browser-author](example-images/fanfic-browser-author.png)
+![profile](example-images/profile-menu.png)
