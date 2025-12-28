@@ -235,7 +235,7 @@ function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
 end
 
 function AO3UserBrowser:openUserSeriesList()
-    local success, seriesList = self.Fanfic:getSeriesFromUserPage(self.userData.username)  --
+    local success, seriesList = self.Fanfic:getSeriesFromUserPage(self.userData.username, self.userData.pseud)  --
     if success then
         local series_menu_kv = {}
         table.insert(series_menu_kv, {

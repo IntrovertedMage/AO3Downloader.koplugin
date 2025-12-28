@@ -653,10 +653,10 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
 end
 
-function AO3DownloaderClient:getUserSeries(username, page_no)
+function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     page_no = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
-    local url = T("%1/users/%2/series?page=%3", getAO3URL(), username, page_no)
+    local url = T("%1/users/%2/pseuds/%3/series?page=%4", getAO3URL(), username, pseud, page_no)
 
     local response_body = {}
     local request = {

@@ -510,13 +510,13 @@ function Fanfic:getPseudsForUser(username)
 
 end
 
-function Fanfic:getSeriesFromUserPage(username)
+function Fanfic:getSeriesFromUserPage(username, pseud)
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isConnected() then
         NetworkMgr:runWhenConnected()
         return false, {}
     end
-    local series_result = AO3DownloaderClient:getUserSeries(username)
+    local series_result = AO3DownloaderClient:getUserSeries(username, pseud)
     if not series_result.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Failed to fetch series from user page: " .. (series_result.error or "Unknown error"),
