@@ -820,19 +820,43 @@ function FanficMenu:onOpenSettings()
                 menu_item = {
                     text = setting.text,
                     callback =  function ()
-                        local notice = InfoMessage:new{
-                            text = T("Carrying out %1 may take some time...", setting.text);
+                        local dialog
+                        dialog = ButtonDialog:new{
+                            title = T("Are you sure you want to run the operation '%1'?", setting.text),
+                            buttons = {
+                                {
+                                    {
+                                        text = _("Yes"),
+                                        is_enter_default = true,
+                                        callback = function()
+                                            UIManager:close(dialog)
+                                            local notice = InfoMessage:new{
+                                                text = T("Carrying out task '%1' may take some time...", setting.text);
+                                            }
+                                            UIManager:scheduleIn(1, function()
+
+                                                setting.call_function()
+                                                UIManager:close(notice)
+                                                UIManager:show(InfoMessage:new{
+                                                    text = T("Task '%1' complete", setting.text);
+                                                })
+                                            end)
+                                            UIManager:show(notice)
+                                        end,
+                                    },
+                                },
+                                {
+                                    {
+                                        text = _("Cancel"),
+                                        callback = function()
+                                            UIManager:close(dialog)
+                                        end,
+                                    },
+                                },
+                            },
                         }
-                        UIManager:scheduleIn(1, function()
 
-                            setting.call_function()
-                            UIManager:close(notice)
-                            UIManager:show(InfoMessage:new{
-                                text = T("Task %1 complete", setting.text);
-                            })
-                        end)
-                        UIManager:show(notice)
-
+                        UIManager:show(dialog)
                     end
                 }
             end
