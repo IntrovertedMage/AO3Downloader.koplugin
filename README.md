@@ -6,8 +6,8 @@ The plugins menu is found under the search tab in the top menu on the second pag
 - Download works by their id
 - Update and delete downloaded works from the download menu
 - Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
-- Search for and open users profiles and download their works, series, bookmarks and gifted works.
-  - Profiles can also be open from the fanfic browser by tapping the author category
+- Search for and open users profiles and download the users works, series, bookmarks and gifted works.
+  - Profiles can also be open from the work search results menu by tapping the author category
 
 ## Features I want to work on
 - ~~Support using a AO3 account~~ - done 
@@ -18,6 +18,10 @@ The plugins menu is found under the search tab in the top menu on the second pag
 - Open a new search for works containing a certain tag by tapping the tags link in an open fanfic file
 - Open up a users profile by tapping on the users link in an open fanfic file
 - Improve downloaded works menu
+- View and manage series, user and works subscriptions when logged in
+- Option to use cookies as alternative login method
+- Support for collections
+- Mass download all works in series/ certain amount of works in work search results
 
 ## Screenshots
 ![plugin-open](example-images/plugin-open.png)
