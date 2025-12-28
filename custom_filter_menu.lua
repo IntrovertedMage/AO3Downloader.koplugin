@@ -1427,17 +1427,9 @@ function CustomFilterMenu:executeSearch()
         end
 
         -- Show the results in the FanficBrowser
-        FanficBrowser:show(
-            self.fanfic.ui,
-            self.menuWidget,
+        self.fanfic:onShowFanficBrowser(
             ficResults,
-            fetchNextPage,
-            function(fanfic)
-                self.fanfic:UpdateFanfic(fanfic)
-            end, -- Update callback
-            function(fanficId, parentMenu)
-                self.fanfic:DownloadFanfic(fanficId, parentMenu)
-            end -- Download callback
+            fetchNextPage
         )
     end)
 

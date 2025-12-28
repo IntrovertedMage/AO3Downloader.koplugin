@@ -5,7 +5,7 @@ local _ = require("gettext")
 
 local FanficSearch = {}
 
-function FanficSearch:show(parentMenu, onDownloadCallback)
+function FanficSearch:show(onDownloadCallback)
     local fanfic_lookup_dialog
     fanfic_lookup_dialog = InputDialog:new{
         title = _("Enter AO3 fanfic id to download"),

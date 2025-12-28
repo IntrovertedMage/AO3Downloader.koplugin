@@ -28,7 +28,9 @@ local function normalizeField(field)
     end
 end
 
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
+function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
+    self.Fanfic = Fanfic
+
     local function refreshDownloadMenu()
         local downloaded_fanfics = DownloadedFanfics.getAll()
         if next(downloaded_fanfics) == nil then
@@ -132,13 +134,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                     fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
                                                     DownloadedFanfics.update(fanfic) -- Save the updated metadata
                                                     if (not fanfic.chapter_data) or #fanfic.chapter_data == 0 then
-                                                        UIManager:close(parentMenu)
                                                         UIManager:close(dialog)
-                                                        ---@diagnostic disable-next-line: missing-fields
-                                                        FanficReader:show({
-                                                            fanfic_path = fanfic.path,
-                                                            current_fanfic = fanfic,
-                                                        })
+                                                        self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
                                                     else
                                                         local open_method
                                                         open_method = ButtonDialog:new({
@@ -147,14 +144,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback)
                                                                     {
                                                                         text = "Open",
                                                                         callback = function()
-                                                                            UIManager:close(parentMenu)
                                                                             UIManager:close(dialog)
                                                                             UIManager:close(open_method)
-                                                                            ---@diagnostic disable-next-line: missing-fields
-                                                                            FanficReader:show({
-                                                                                fanfic_path = fanfic.path,
-                                                                                current_fanfic = fanfic,
-                                                                            })
+                                                                            self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
                                                                         end,
                                                                     },
                                                                 },
@@ -367,12 +359,7 @@ function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
         table.insert(chapter_options, {
             text = (chapter.read and "✓ " or "") .. chapter.name,
             callback = function()
-                FanficReader:show({
-                    fanfic_path = fanfic.path,
-                    current_fanfic = fanfic,
-                    chapter_opening_at = idx,
-                })
-                UIManager:close(parentMenu)
+                self.Fanfic:onOpenFanficReader(fanfic.path, fanfic, idx)
             end,
         })
     end
