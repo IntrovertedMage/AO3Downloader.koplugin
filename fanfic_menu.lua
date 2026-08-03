@@ -203,36 +203,6 @@ end
 function FanficMenu:onSearchFanficMenu()
     local menu_items = {
         {
-            text = _("Quick search"),
-            callback = function()
-                self:onQuickSearchMenu()
-            end,
-        },
-        {
-            text = _("Search using Filter search"), -- New menu item
-            callback = function()
-                CustomFilterMenu:show(self.menuWidget, self.fanfic)
-            end,
-        },
-        {
-            text = _("Download work by ID"),
-            callback = function()
-                self:onShowFanficSearch()
-            end,
-        },
-        {
-            text = _("Search for users"),
-            callback = function()
-                self:onSelectUserSearch()
-            end,
-        }
-    }
-    self.menuWidget:GoDownInMenu("Select search mode", menu_items)
-end
-
-function FanficMenu:onQuickSearchMenu()
-    local menu_items = {
-        {
             text = "Browse works by Fandom",
             callback = function()
                 self:onSelectTag("Fandom")
@@ -256,8 +226,38 @@ function FanficMenu:onQuickSearchMenu()
                 self:onSelectTag("Freeform")
             end,
         },
+        {
+            text = _("Search using Filter search"), -- New menu item
+            callback = function()
+                CustomFilterMenu:show(self.menuWidget, self.fanfic)
+            end,
+        },
+        {
+            text = _("Download work by ID"),
+            callback = function()
+                self:onShowFanficSearch()
+            end,
+        },
+        {
+            text = _("Search for users"),
+            callback = function()
+                self:onSelectUserSearch()
+            end,
+        },
+        {
+            text = _("Browse Account History"),
+            callback = function()
+                self:onSelectAccountHistory(false)
+            end,
+        },
+        {
+            text = _("Browse Account Marked for Later"),
+            callback = function()
+                self:onSelectAccountHistory(true)
+            end,
+        }
     }
-    self.menuWidget:GoDownInMenu("Select quick search mode", menu_items)
+    self.menuWidget:GoDownInMenu("Select search mode", menu_items)
 end
 
 function FanficMenu:onShowFanficSearch()
@@ -669,6 +669,24 @@ function FanficMenu:onSearchUser()
 
     UIManager:show(search_dialog)
     search_dialog:onShowKeyboard()
+end
+
+function FanficMenu:onSelectAccountHistory(marked_for_later)
+    UIManager:scheduleIn(1, function()
+        local success, ficResults, fetchNextPage = self.fanfic:getWorksFromAccountHistory(marked_for_later)
+        if not success then
+            return
+        end
+
+        self.fanfic:onShowFanficBrowser(
+            ficResults,
+            fetchNextPage
+        )
+    end)
+    UIManager:show(InfoMessage:new({
+        text = _("Downloading works data may take some time…"),
+        timeout = 1,
+    }))
 end
 
 function FanficMenu:onOpenSettings()
