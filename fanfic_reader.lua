@@ -240,7 +240,6 @@ function FanficReader:addToMainMenu(menu_items)
                         local request_result = AO3DownloaderClient:updateBookmark(
                             self.current_fanfic.id,
                             self.current_fanfic.bookmarkID,
-                            "18388684",
                             fields[1],
                             fields[2],
                             fields[3],
@@ -282,9 +281,7 @@ function FanficReader:addToMainMenu(menu_items)
                         local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
 
                         if request_result.success then
-                            if request_result.bookmark_id then
-                                self.current_fanfic.bookmarkID = false
-                            end
+                            self.current_fanfic.bookmarkID = false
                             DownloadedFanfics.update(self.current_fanfic, false)
 
                             UIManager:show(InfoMessage:new({
@@ -297,7 +294,6 @@ function FanficReader:addToMainMenu(menu_items)
                         UIManager:show(InfoMessage:new({
                             text = "Error: " .. request_result.error,
                         }))
-
 
                         UIManager:close(bookmark_input)
                     end

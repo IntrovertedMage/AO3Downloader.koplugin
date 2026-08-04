@@ -764,6 +764,49 @@ function AO3DownloaderClient:getUserPseuds(username)
     }
 end
 
+function AO3DownloaderClient:getAccountPseudID(username)
+    local url = T("%1/users/%2/pseuds/%2/edit", getAO3URL(), username)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if request_result.status == 404 then
+        return {
+            success = false,
+            error = T("Pseud edit page for '%1' not found.", username),
+        }
+    end
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch accound pseud ID. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+    local root = htmlparser.parse(html_body)
+    local pseud_id = AO3WebParser:parseAccountPseudID(root)
+
+    if not pseud_id then
+        return {
+            success = false,
+            error = T("Failed to parse accound pseud ID"),
+        }
+    end
+
+    return {
+        success = true,
+        pseud_id = pseud_id,
+    }
+end
+
 function AO3DownloaderClient:searchForUsers(search_query, page_no)
     logger.dbg("AO3Downloader.koplugin: Executing user search for query: " .. tostring(search_query) .. ", page no: " .. tostring(page_no))
     if not search_query or search_query == "" then
@@ -1173,7 +1216,7 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
     }
 end
 
-function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, pseud_id, notes, tags, collections, private, rec)
+function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
     logger.dbg("AO3Downloader.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
 
     local login_status = self:GetSessionStatus()
@@ -1204,7 +1247,6 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, pseud_id, note
     local url
     local form_data = {
         ["authenticity_token"] = authenticity_token,
-        ["bookmark[pseud_id]"] = tostring(pseud_id),
         ["bookmark[bookmarker_notes]"] = notes or "",
         ["bookmark[tag_string]"] = tags or "",
         ["bookmark[collection_names]"] = collections or "",
@@ -1219,6 +1261,17 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, pseud_id, note
     else
         url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
         form_data["commit"] = "Create"
+
+        local pseud_result = AO3DownloaderClient:getAccountPseudID(login_status.username)
+
+        if not pseud_result.success then
+            return {
+                success = false,
+                error = T("Error: %1", pseud_result.error)
+            }
+        end
+
+        form_data["bookmark[pseud_id]"] = tostring(pseud_result.pseud_id)
     end
 
     local form = encodeHelper:generateParametersStringForm(form_data)
@@ -2057,6 +2110,15 @@ function AO3WebParser:parseUserPseuds(root)
     end
 
     return pseuds
+end
+
+function AO3WebParser:parseAccountPseudID(root)
+
+    local element = root:select(".edit_pseud")[1]
+
+    local pseud_id = element and element.attributes and element.attributes.id:match("edit_pseud_(%d+)") or false
+
+    return pseud_id
 end
 
 function AO3WebParser:parseUserSearchResults(root)
