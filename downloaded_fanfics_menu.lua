@@ -93,12 +93,14 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                     local fandom_fanfic_count = #fanfics
                     for __, fanfic in pairs(fanfics) do
                         local fanfic_read = true
-
+                        local first_unread_chapter = nil
                         if fanfic.chapter_data and #fanfic.chapter_data > 0 then
                             for index, chapter in pairs(fanfic.chapter_data) do
                                 if not chapter.read then
                                     fanfic_read = false
                                     break
+                                else
+                                    first_unread_chapter = index
                                 end
                             end
                         elseif not fanfic.chapter_data or #fanfic.chapter_data == 0 and fanfic.read then
@@ -115,9 +117,17 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             fanfic_complete = false
                         end
 
+                        local prefix = "  "
+                        if fanfic_read and (not fanfic_complete) then
+                            prefix = "=" 
+                        elseif fanfic_read and fanfic_complete then
+                            prefix = "✓"
+                        elseif first_unread_chapter and (not fanfic_read) then
+                            prefix = tostring(first_unread_chapter)
+                        end
 
                         table.insert(submenu_items, {
-                            text = T("%1 (%2) %3", fanfic_read and (not fanfic_complete) and "=" or  fanfic_read and fanfic_complete and "✓" or "  ", fanfic.chapters, fanfic.title),
+                            text = T("%1 (%2) %3 by %4",prefix, fanfic.chapters, fanfic.title, fanfic.author),
                             id = fanfic.id,
                             callback = function()
                                 -- Show options for the fanfic
