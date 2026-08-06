@@ -1263,7 +1263,7 @@ function AO3WebParser:parseAccountHistory(root)
         end
     end
 
-    works["total"] = 0
+    works["total"] = -1
 
     return works
 end
