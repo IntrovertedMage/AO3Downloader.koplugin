@@ -590,6 +590,39 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
     }
 end
 
+function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
+    logger.dbg("AO3Downloader.koplugin: Fetching works from collection ID: " .. tostring(collection_id) .. ", page no: " .. tostring(page_no))
+    page_no = page_no or 1
+    local url = T("%1/collections/%2/works?page=%3", getAO3URL(), collection_id, page_no)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch collection works. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+
+    local root = htmlparser.parse(html_body)
+
+    local works = AO3WebParser:parseWorkSearchResults(root)
+
+    return {
+        success = true,
+        works = works,
+    }
+end
+
 function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
     local url
     if catagory == "gifts" then
@@ -687,6 +720,38 @@ function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     }
 end
 
+function AO3DownloaderClient:getUserCollections(username, page_no)
+    page_no = page_no or 1
+    logger.dbg("AO3Downloader.koplugin: Fetching collections for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    local url = T("%1/users/%2/collections?page=%3", getAO3URL(), username, page_no)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch user collections. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+
+    local root = htmlparser.parse(html_body)
+
+    local collections = AO3WebParser:parseUserCollectionsPage(root)
+
+    return {
+        success = true,
+        collections = collections,
+    }
+end
 
 function AO3DownloaderClient:getUserData(username, pseud)
     local url = T("%1/users/%2/pseuds/%3", getAO3URL(),username, pseud)
@@ -1186,6 +1251,82 @@ function AO3WebParser:parseUserSeriesPage(root)
     end
 
     return series_list
+end
+
+function AO3WebParser:parseUserCollectionsPage(root)
+    local collection_list = {}
+    local elements = root:select("li.collection")
+
+    local count = 1
+
+    for _, element in ipairs(elements) do
+        local titleElement = element:select(".heading > a:not([class])")[1]
+        if titleElement then
+
+            --works
+            --bookmarked items
+            --prompts
+            --challenges/subcollections
+
+            local href = titleElement.attributes.href
+            local id = href:match("/collections/([%w_-]+)")
+            local title = titleElement:getcontent()
+
+            local authorElements = element:select(".heading > a.owner")
+            local author_table = {}
+            for _, author in pairs(authorElements) do
+                table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
+            end
+            authorElements = element:select(".heading > a.mod")
+            for _, author in pairs(authorElements) do
+                table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
+            end
+            local author = #author_table > 0 and table.concat(author_table, ", ") or nil
+
+            local dateElement = element:select(".datetime")[1]
+
+            local date_posted = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or ""
+
+            local tagElements = element:select(".tags > a.tag")
+            local tags = {}
+
+            for _, tagElement in pairs(tagElements) do
+                local content = tagElement:getcontent()
+                if content then
+                    table.insert(tags, encodeHelper:parseToCodepoints(content))
+                end
+            end
+
+            local typeElement = element:select("p.type")[1]
+            local type = typeElement:getcontent():gsub("^%s*(.-)%s*$", "%1") 
+
+            local summaryElement = element:select(".summary")[1]
+            local summary = (type and (type.." ") or "") .. (summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
+                :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                :gsub("<[^>]+>", "") -- Remove other HTML tags
+                :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
+            ))
+
+            local workCountElement = element:select("dd.works > a")[1]
+            local work_count = workCountElement and tonumber(workCountElement:getcontent():gsub(",", ""), 10) or 0
+
+            local collection = {
+                id = id,
+                title = title,
+                author = author,
+                date_posted = date_posted,
+                tags = tags,
+                summary = summary,
+                work_count = work_count,
+            }
+
+            table.insert(collection_list, count, collection)
+            count = count + 1
+        end
+    end
+
+    return collection_list
 end
 
 function AO3WebParser:parseWorkElement(element)

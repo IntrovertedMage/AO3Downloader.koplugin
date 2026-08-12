@@ -528,6 +528,45 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
 
 end
 
+function Fanfic:getCollectionsFromUserPage(username)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local works_result = AO3DownloaderClient:getUserCollections(username)
+    if not works_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch works from user collections page: " .. (works_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    local currentPage = 1
+
+    local function getNextPage()
+        currentPage = currentPage + 1
+        local next_page_result = AO3DownloaderClient:getUserCollections(username, currentPage)
+        if not next_page_result.success then
+            currentPage = currentPage - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch works from user collections page: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more works to fetch
+        if #next_page_result.works == 0 then
+            currentPage = currentPage - 1
+            return {}
+        end
+
+        return  next_page_result.collections
+    end
+
+    return true, works_result.collections, getNextPage
+end
+
 function Fanfic:getWorksFromSeries(series_id)
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isConnected() then
@@ -551,6 +590,47 @@ function Fanfic:getWorksFromSeries(series_id)
             currentpage = currentpage - 1
             UIManager:show(InfoMessage:new{
                 text = "Error: Failed to fetch works from series: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more works to fetch
+        if #next_page_result.works == 0 then
+            currentpage = currentpage - 1
+            return {}
+        end
+
+        return  next_page_result.works
+
+    end
+
+    return true, works_result.works, fetchNextPage
+
+end
+
+function Fanfic:getWorksFromCollection(collection_id)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local works_result = AO3DownloaderClient:getWorksFromCollection(collection_id)
+    if not works_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch works from collection: " .. (works_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    local currentpage = 1
+
+    local function fetchNextPage()
+        currentpage = currentpage + 1
+        local next_page_result = AO3DownloaderClient:getWorksFromCollection(collection_id, currentpage)
+        if not next_page_result.success then
+            currentpage = currentpage - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch works from collection: " .. (next_page_result.error or "Unknown error"),
             })
             return {}
         end
