@@ -1541,13 +1541,12 @@ function AO3WebParser:parseWorkPage(root)
     end
 
     if #chapterData == 0 then
-        local single_chapter_title = root:select(".chapter.preface.group > h3.title")[1]
-
-        if single_chapter_title then
-            local content = single_chapter_title:getcontent()
-            local chapter_title = string.match(content, "</a>:%s*(.+)") or "Chapter 1"
+        local chapter_title_elements = root:select(".chapter.preface.group > h3.title")
+        for _, chapter_title_element in pairs(chapter_title_elements) do
+            local content = chapter_title_element:getcontent()
+            local chapter_title = string.match(content, "</a>:%s*(.+)") or ("Chapter " .. (#chapterData + 1))
             local chapter_id = string.match(content, "/chapters/(%d+)")
-            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = "1. " .. chapter_title })
+            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = tostring(#chapterData + 1) .. ". " .. chapter_title })
         end
     end
 
