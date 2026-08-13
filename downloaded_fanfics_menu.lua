@@ -122,53 +122,60 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             callback = function()
                                 -- Show options for the fanfic
                                 local dialog
+
+                                local open_buttons = {
+                                    {
+                                        text = _("Open"),
+                                        callback = function()
+                                            -- Update the `last_accessed` field
+                                            fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
+                                            DownloadedFanfics.update(fanfic)
+
+                                            UIManager:close(dialog)
+                                            self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
+                                        end,
+                                    },
+                                }
+
+                                if fanfic.chapter_data and #fanfic.chapter_data > 0 then
+                                    table.insert(open_buttons, {
+                                        text = _("Open at chapter"),
+                                        callback = function()
+                                            -- Update the `last_accessed` field
+                                            fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
+                                            DownloadedFanfics.update(fanfic)
+
+                                            UIManager:close(dialog)
+                                            DownloadedFanficsMenu:showFanficChapterSelect(
+                                                ui,
+                                                fanfic,
+                                                parentMenu
+                                            )
+                                        end,
+                                    })
+                                end
+
                                 dialog = ButtonDialog:new({
                                     title = T(_("Options for '%1'"), fanfic.title),
                                     buttons = {
+                                        
+                                            open_buttons
+                                        ,
                                         {
                                             {
-                                                text = _("Open"),
+                                                text = _("Update"),
                                                 callback = function()
-
-                                                    -- Update the `last_accessed` field
-                                                    fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
-                                                    DownloadedFanfics.update(fanfic) -- Save the updated metadata
-                                                    if (not fanfic.chapter_data) or #fanfic.chapter_data == 0 then
+                                                    UIManager:scheduleIn(1, function()
+                                                        -- Update the fanfic
+                                                        updateFanficCallback(fanfic)
                                                         UIManager:close(dialog)
-                                                        self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
-                                                    else
-                                                        local open_method
-                                                        open_method = ButtonDialog:new({
-                                                            buttons = {
-                                                                {
-                                                                    {
-                                                                        text = "Open",
-                                                                        callback = function()
-                                                                            UIManager:close(dialog)
-                                                                            UIManager:close(open_method)
-                                                                            self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
-                                                                        end,
-                                                                    },
-                                                                },
-                                                                {
-                                                                    {
-                                                                        text = "Open at chapter",
-                                                                        callback = function()
-                                                                            UIManager:close(dialog)
-                                                                            UIManager:close(open_method)
-                                                                            DownloadedFanficsMenu:showFanficChapterSelect(
-                                                                                ui,
-                                                                                fanfic,
-                                                                                parentMenu
-                                                                            )
-                                                                        end,
-                                                                    },
-                                                                },
-                                                            },
-                                                        })
-                                                        UIManager:show(open_method)
-                                                    end
+                                                    end)
+                                                    UIManager:show(InfoMessage:new({
+                                                        text = _("Downloading work may take some time…"),
+                                                        timeout = 1,
+                                                    }))
                                                 end,
+                                                UIManager:close(dialog),
                                             },
                                             {
                                                 text = _("View Details"),
@@ -222,19 +229,10 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                         },
                                         {
                                             {
-                                                text = _("Update"),
+                                                text = _("Cancel"),
                                                 callback = function()
-                                                    UIManager:scheduleIn(1, function()
-                                                        -- Update the fanfic
-                                                        updateFanficCallback(fanfic)
-                                                        UIManager:close(dialog)
-                                                    end)
-                                                    UIManager:show(InfoMessage:new({
-                                                        text = _("Downloading work may take some time…"),
-                                                        timeout = 1,
-                                                    }))
+                                                    UIManager:close(dialog)
                                                 end,
-                                                UIManager:close(dialog),
                                             },
                                             {
                                                 text = _("Delete"),
@@ -242,7 +240,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                     local confirmDialog
                                                     -- Confirm deletion
                                                     confirmDialog = ButtonDialog:new({
-                                                        title = T(_("Are you sure you want to delete '%1'?"), fanfic.title),
+                                                        title = T(_("Are you sure you want to delete '%1'?"),
+                                                            fanfic.title),
                                                         buttons = {
                                                             {
                                                                 {
@@ -308,15 +307,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                     UIManager:show(confirmDialog)
                                                     UIManager:close(dialog)
                                                 end,
-                                            },
-                                        },
-                                        {
-                                            {
-                                                text = _("Cancel"),
-                                                callback = function()
-                                                    UIManager:close(dialog)
-                                                end,
-                                            },
+                                            }
                                         },
                                     },
                                 })
