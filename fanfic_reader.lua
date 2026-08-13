@@ -239,7 +239,6 @@ function FanficReader:addToMainMenu(menu_items)
                                 if self.current_fanfic.bookmarkID then
                                     table.insert(buttons, {
                                         text = _("Delete"),
-                                        id = "close",
                                         callback = function()
 
                                             local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
