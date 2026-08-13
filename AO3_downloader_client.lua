@@ -74,6 +74,16 @@ function encodeHelper:parseToCodepoints(str)
     return self:unescapeText(str)
 end
 
+function encodeHelper:parseFromHTML(str)
+    return encodeHelper:parseToCodepoints(
+                    str
+                        :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                        :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                        :gsub("<[^>]+>", "") -- Remove other HTML tags
+                        :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+                )
+end
+
 function encodeHelper:generateParametersStringForm(params)
     local form_parts = {}
     for key, value in pairs(params) do
@@ -1514,12 +1524,7 @@ function AO3WebParser:parseUserSeriesPage(root)
             end
 
             local summaryElement = element:select(".summary")[1]
-            local summary = summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
-                :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                :gsub("<[^>]+>", "") -- Remove other HTML tags
-                :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
-            )
+            local summary = summaryElement and encodeHelper:parseFromHTML(summaryElement:getcontent())
 
             local wordCountElement = element:select("dd.words")[1]
             logger.dbg(wordCountElement and wordCountElement:getcontent():gsub(",", "") or "No word count element found")
@@ -1679,14 +1684,7 @@ function AO3WebParser:parseWorkElement(element)
 
         -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
         local summary = summaryElement
-                and encodeHelper:parseToCodepoints(
-                    summaryElement
-                        :getcontent()
-                        :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                        :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                        :gsub("<[^>]+>", "") -- Remove other HTML tags
-                        :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-                )
+            and encodeHelper:parseFromHTML(summaryElement:getcontent())
             or "No summary available"
 
         -- Remove leading and trailing whitespace from the title
@@ -1810,14 +1808,7 @@ function AO3WebParser:parseWorkPage(root)
     local gifted_to = giftElements and table.concat(giftedTo_table, ", ") or nil
 
     local summary = summaryElement
-        and encodeHelper:parseToCodepoints(
-            summaryElement
-            :getcontent()
-            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-            :gsub("<[^>]+>", "") -- Remove other HTML tags
-            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-        )
+        and encodeHelper:parseFromHTML(summaryElement:getcontent())
         or "No summary available"
 
     local chapterData = {}
