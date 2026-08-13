@@ -1905,6 +1905,23 @@ function AO3WebParser:parseWorkPage(root)
     local subscriptionID = subscriptionFormElement and subscriptionFormElement.attributes and subscriptionFormElement.attributes.id:match("edit_subscription_(%d+)") or false
     local bookmarkID = bookmarkFormElement and bookmarkFormElement.attributes and bookmarkFormElement.attributes.action:match("/bookmarks/(%d+)") or false
 
+    local bookmarkContent = {}
+
+    local bookmarkNotesElement = root:select("#bookmark_notes")[1]
+    bookmarkContent.notes = encodeHelper:parseFromHTML(bookmarkNotesElement:getcontent())
+
+    local bookmarkTagElement = root:select("#bookmark_tag_string")[1]
+    bookmarkContent.tags = bookmarkTagElement and bookmarkTagElement.attributes and bookmarkTagElement.attributes.value or ""
+
+    local bookmarkCollectionElement = root:select("#bookmark_collection_names")[1]
+    bookmarkContent.collections = bookmarkCollectionElement and bookmarkCollectionElement.attributes and bookmarkCollectionElement.attributes.value or ""
+
+    local bookmarkPrivElement = root:select("#bookmark_private")[1]
+    bookmarkContent.private = bookmarkPrivElement and bookmarkPrivElement.attributes and bookmarkPrivElement.attributes.checked=="checked" or false
+
+    local bookmarkRecElement = root:select("#bookmark_rec")[1]
+    bookmarkContent.rec = bookmarkRecElement and bookmarkRecElement.attributes and bookmarkRecElement.attributes.checked=="checked" or false
+
     -- Extract EPUB link
     local epub_link = nil
     for _, e in ipairs(epubElement) do
@@ -1956,6 +1973,7 @@ function AO3WebParser:parseWorkPage(root)
         markedForLater = markedForLater,
         subscriptionID = subscriptionID,
         bookmarkID = bookmarkID,
+        bookmarkContent = bookmarkContent
     }
 
     return work

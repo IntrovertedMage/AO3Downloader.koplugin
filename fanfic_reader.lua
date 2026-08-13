@@ -245,6 +245,7 @@ function FanficReader:addToMainMenu(menu_items)
 
                                             if request_result.success then
                                                 self.current_fanfic.bookmarkID = false
+                                                self.current_fanfic.bookmarkContent = nil
                                                 DownloadedFanfics.update(self.current_fanfic, false)
 
                                                 UIManager:show(InfoMessage:new({
@@ -267,19 +268,24 @@ function FanficReader:addToMainMenu(menu_items)
                                     title = _(self.current_fanfic.bookmarkID and "Overwrite existing bookmark" or "Save a bookmark!"),
                                     fields = {
                                         {
-                                            hint = _("Notes")
+                                            hint = _("Notes"),
+                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.notes or nil
                                         },
                                         {
-                                            hint = _("Your tags (Comma Seperated)")
+                                            hint = _("Your tags (Comma Seperated)"),
+                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.tags or nil
                                         },
                                         {
                                             hint = _("Add to collections (Comma Seperated)"),
+                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.collections or nil
                                         },
                                         {
                                             hint = _("Private bookmark (Y/N)"),
+                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.private and "Y" or "N") or nil
                                         },
                                         {
                                             hint = _("Rec (Y/N)"),
+                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.rec and "Y" or "N") or nil
                                         },
                                     },
                                     buttons = {

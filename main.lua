@@ -190,6 +190,7 @@ function Fanfic:DownloadFanfic(id)
         markedForLater = request_result.work_metadata.markedForLater,
         subscriptionID = request_result.work_metadata.subscriptionID,
         bookmarkID = request_result.work_metadata.bookmarkID,
+        bookmarkContent = request_result.work_metadata.bookmarkContent
     }
 
     if fanfic.chapter_data then
@@ -276,6 +277,7 @@ function Fanfic:UpdateFanfic(fanfic)
     fanfic.markedForLater = request_result.work_metadata.markedForLater
     fanfic.subscriptionID = request_result.work_metadata.subscriptionID
     fanfic.bookmarkID = request_result.work_metadata.bookmarkID
+    fanfic.bookmarkContent = request_result.work_metadata.bookmarkContent
 
     if #fanfic.chapter_data == 0 and not (request_result.work_metadata.chapterData == 0) then
         fanfic.read = nil
