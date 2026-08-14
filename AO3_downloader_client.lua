@@ -1899,7 +1899,7 @@ function AO3WebParser:parseWorkPage(root)
     local bookmarkContent = {}
 
     local bookmarkNotesElement = root:select("#bookmark_notes")[1]
-    bookmarkContent.notes = encodeHelper:parseFromHTML(bookmarkNotesElement:getcontent())
+    bookmarkContent.notes = encodeHelper:parseFromHTML(bookmarkNotesElement:getcontent()) or ""
 
     local bookmarkTagElement = root:select("#bookmark_tag_string")[1]
     bookmarkContent.tags = bookmarkTagElement and bookmarkTagElement.attributes and bookmarkTagElement.attributes.value or ""

@@ -9,6 +9,7 @@ local AO3DownloaderClient = require("AO3_downloader_client")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
+local MultiInputDialog = require("ui/widget/multiinputdialog")
 
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
@@ -182,37 +183,38 @@ function FanficReader:addToMainMenu(menu_items)
                                     return
                                 end
 
-                                local MultiInputDialog = require("ui/widget/multiinputdialog")
-                                local UIManager = require("ui/uimanager")
-                                local _ = require("gettext")
-
                                 local bookmark_input
+                                local bookmarkContent = {notes="",tags="",collections=""}
 
                                 local buttons = {
                                     {
-                                        text = _("Cancel"),
+                                        text = "Cancel",
                                         id = "close",
                                         callback = function()
                                             UIManager:close(bookmark_input)
                                         end
                                     },
                                     {
-                                        text = _(self.current_fanfic.bookmarkID and "Update" or "Create"),
+                                        text = self.current_fanfic.bookmarkID and "Update" or "Create",
                                         callback = function()
                                             local fields = bookmark_input:getFields()
+                                            bookmarkContent.private = fields[1] == "y" or fields[1] == "Y"
+                                            bookmarkContent.rec = fields[2] == "y" or fields[2] == "Y"
 
                                             local request_result = AO3DownloaderClient:updateBookmark(
                                                 self.current_fanfic.id,
                                                 self.current_fanfic.bookmarkID,
-                                                fields[1],
-                                                fields[2],
-                                                fields[3],
-                                                fields[4] == "y" or fields[4] == "Y",
-                                                fields[5] == "y" or fields[5] == "Y"
+                                                bookmarkContent.notes,
+                                                bookmarkContent.tags,
+                                                bookmarkContent.collections,
+                                                bookmarkContent.private,
+                                                bookmarkContent.rec
                                             )
 
                                             if request_result.success then
                                                 local originalBMID = self.current_fanfic.bookmarkID
+
+                                                self.current_fanfic.bookmarkContent = bookmarkContent
 
                                                 if request_result.bookmark_id then
                                                     self.current_fanfic.bookmarkID = request_result.bookmark_id
@@ -222,14 +224,11 @@ function FanficReader:addToMainMenu(menu_items)
                                                 UIManager:show(InfoMessage:new({
                                                     text = originalBMID and "Updated Bookmark" or "Created Bookmark",
                                                 }))
-
-                                                return
+                                            else
+                                                UIManager:show(InfoMessage:new({
+                                                    text = "Error: " .. request_result.error,
+                                                }))
                                             end
-
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-
 
                                             UIManager:close(bookmark_input)
                                         end
@@ -238,57 +237,175 @@ function FanficReader:addToMainMenu(menu_items)
 
                                 if self.current_fanfic.bookmarkID then
                                     table.insert(buttons, {
-                                        text = _("Delete"),
+                                        text = "Delete",
                                         callback = function()
+                                            local confirmDialog
+                                            -- Confirm deletion
+                                            confirmDialog = ButtonDialog:new({
+                                                title = "Are you sure you want to delete this bookmark?",
+                                                buttons = {
+                                                    {
+                                                        {
+                                                            text = "Delete",
+                                                            callback = function()
+                                                                local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
 
-                                            local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
+                                                                if request_result.success then
+                                                                    self.current_fanfic.bookmarkID = false
+                                                                    self.current_fanfic.bookmarkContent = {}
+                                                                    DownloadedFanfics.update(self.current_fanfic, false)
 
-                                            if request_result.success then
-                                                self.current_fanfic.bookmarkID = false
-                                                self.current_fanfic.bookmarkContent = nil
-                                                DownloadedFanfics.update(self.current_fanfic, false)
+                                                                    UIManager:show(InfoMessage:new({
+                                                                        text = "Deleted Bookmark",
+                                                                    }))
+                                                                else
+                                                                    UIManager:show(InfoMessage:new({
+                                                                        text = "Error: " .. request_result.error,
+                                                                    }))
+                                                                end
 
-                                                UIManager:show(InfoMessage:new({
-                                                    text = "Deleted Bookmark",
-                                                }))
-
-                                                return
-                                            end
-
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-
-                                            UIManager:close(bookmark_input)
+                                                                UIManager:close(confirmDialog)
+                                                                UIManager:close(bookmark_input)
+                                                            end,
+                                                        },
+                                                        {
+                                                            text = "Cancel",
+                                                            callback = function()
+                                                                UIManager:close(confirmDialog)
+                                                            end,
+                                                        },
+                                                    },
+                                                },
+                                            })
+                                            UIManager:show(confirmDialog)
                                         end
                                     })
+                                    if self.current_fanfic.bookmarkContent then
+                                        for k, v in pairs(self.current_fanfic.bookmarkContent) do
+                                            bookmarkContent[k] = v
+                                        end
+                                    end
                                 end
 
                                 bookmark_input = MultiInputDialog:new {
-                                    title = _(self.current_fanfic.bookmarkID and "Overwrite existing bookmark" or "Save a bookmark!"),
+                                    title = self.current_fanfic.bookmarkID and "Update existing bookmark" or "Save a bookmark!",
                                     fields = {
                                         {
-                                            hint = _("Notes"),
-                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.notes or nil
+                                            hint = "Y/N",
+                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.private and "Y" or "N") or nil,
+                                            description = "Private bookmark"
                                         },
                                         {
-                                            hint = _("Your tags (Comma Seperated)"),
-                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.tags or nil
-                                        },
-                                        {
-                                            hint = _("Add to collections (Comma Seperated)"),
-                                            text = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.collections or nil
-                                        },
-                                        {
-                                            hint = _("Private bookmark (Y/N)"),
-                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.private and "Y" or "N") or nil
-                                        },
-                                        {
-                                            hint = _("Rec (Y/N)"),
-                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.rec and "Y" or "N") or nil
+                                            hint = "Y/N",
+                                            text = self.current_fanfic.bookmarkContent and (self.current_fanfic.bookmarkContent.rec and "Y" or "N") or nil,
+                                            description = "Rec"
                                         },
                                     },
                                     buttons = {
+                                        {
+                                            {
+                                                text = "Edit Notes",
+                                                callback = function()
+                                                    local notes_input
+                                                    notes_input = InputDialog:new {
+                                                        title = "Notes",
+                                                        input = bookmarkContent.notes or nil,
+                                                        fullscreen = true,
+                                                        condensed = true,
+                                                        allow_newline = true,
+                                                        add_scroll_buttons = true,
+                                                        buttons = {
+                                                            {
+                                                                {
+                                                                    text = "\u{f00d}",
+                                                                    id = "close",
+                                                                    callback = function()
+                                                                        UIManager:close(notes_input)
+                                                                    end,
+                                                                },
+                                                                {
+                                                                    text = "\u{f00c}",
+                                                                    callback = function()
+                                                                        bookmarkContent.notes = notes_input:getInputText()
+                                                                        UIManager:close(notes_input)
+                                                                    end,
+                                                                },
+                                                            }
+                                                        },
+                                                    }
+                                                    UIManager:show(notes_input)
+                                                    notes_input:onShowKeyboard()
+                                                end
+                                            },
+                                        },
+                                        {
+                                            {
+                                                text = "Edit Tags",
+                                                callback = function()
+                                                    local tags_input
+                                                    tags_input = InputDialog:new {
+                                                        title = "Your tags (Comma Seperated)",
+                                                        input = bookmarkContent.tags or nil,
+                                                        fullscreen = true,
+                                                        condensed = true,
+                                                        add_scroll_buttons = true,
+                                                        buttons = {
+                                                            {
+                                                                {
+                                                                    text = "\u{f00d}",
+                                                                    id = "close",
+                                                                    callback = function()
+                                                                        UIManager:close(tags_input)
+                                                                    end,
+                                                                },
+                                                                {
+                                                                    text = "\u{f00c}",
+                                                                    callback = function()
+                                                                        bookmarkContent.tags = tags_input:getInputText()
+                                                                        UIManager:close(tags_input)
+                                                                    end,
+                                                                },
+                                                            }
+                                                        },
+                                                    }
+                                                    UIManager:show(tags_input)
+                                                    tags_input:onShowKeyboard()
+                                                end
+                                            },
+                                            {
+                                                text = "Edit Collections",
+                                                callback = function()
+                                                    local collections_input
+                                                    collections_input = InputDialog:new {
+                                                        title = "Add to collections (Comma Seperated)",
+                                                        input = bookmarkContent.collections or nil,
+                                                        fullscreen = true,
+                                                        condensed = true,
+                                                        add_scroll_buttons = true,
+                                                        buttons = {
+                                                            {
+                                                                {
+                                                                    text = "\u{f00d}",
+                                                                    id = "close",
+                                                                    callback = function()
+                                                                        UIManager:close(collections_input)
+                                                                    end,
+                                                                },
+                                                                {
+                                                                    text = "\u{f00c}",
+                                                                    callback = function()
+                                                                        bookmarkContent.collections = collections_input:getInputText()
+                                                                        UIManager:close(collections_input)
+                                                                    end,
+                                                                },
+                                                            }
+                                                        },
+                                                    }
+                                                    UIManager:show(collections_input)
+                                                    collections_input:onShowKeyboard()
+                                                end
+                                            }
+                                        },
                                         buttons
                                     },
                                 }
