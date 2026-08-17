@@ -934,7 +934,7 @@ function AO3DownloaderClient:kudosWork(work_id)
     if request_result.status == 422 then
         return {
             success = false,
-            error = T("Work has already been kudosed by this user."),
+            error = T("You have already left kudos here. :)"),
         }
     end
 

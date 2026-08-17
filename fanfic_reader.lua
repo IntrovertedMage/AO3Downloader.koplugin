@@ -108,7 +108,7 @@ function FanficReader:addToMainMenu(menu_items)
 
             if request_result.success then
                 UIManager:show(InfoMessage:new({
-                    text = "Successfuly sent kudos to work",
+                    text = "Thank you for leaving kudos!",
                 }))
                 return
             end
