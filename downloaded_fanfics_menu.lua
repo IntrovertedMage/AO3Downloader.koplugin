@@ -124,7 +124,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             if Config:readSetting("show_current_chapter", true) then
                                 prefix = "⛉" .. tostring(first_unread_chapter)
                             else
-                                prefix = tostring(unread_count)
+                                prefix = "•󠁏" .. tostring(unread_count)
                             end
                         end
 
