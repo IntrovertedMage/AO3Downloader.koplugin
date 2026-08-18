@@ -119,7 +119,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             prefix = "=" 
                         elseif fanfic_read and fanfic_complete then
                             prefix = "✓"
-                        elseif (not fanfic_read) and first_unread_chapter > 1 then
+                      elseif (not fanfic_read) and (first_unread_chapter or 0) > 1 then
+
                             if Config:readSetting("show_current_chapter", true) then
                                 prefix = "⛉" .. tostring(first_unread_chapter)
                             else
