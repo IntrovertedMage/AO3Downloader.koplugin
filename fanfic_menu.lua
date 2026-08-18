@@ -702,6 +702,7 @@ function FanficMenu:onOpenSettings()
         { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check = checkTemplateHasID},
         { text = "Fanfic folder",   setting = "fanfic_folder_path",  type = "Folder"},
         { text = "Re-sort file paths", call_function = DownloadedFanfics.sortFanfics, type = "Function"},
+        { text = "Chapter progress format", setting = "show_current_chapter", type = "Bool", on="First Unread", off="Total Remaining"},
     }
     local function generateMenuItems()
         local settings_menu_items = {}
@@ -759,7 +760,7 @@ function FanficMenu:onOpenSettings()
                 }
             elseif setting.type == "Bool" then
                 menu_item = {
-                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) and "On" or "Off"),
+                    text = setting.text .. ": " .. (Config:readSetting(setting.setting) and (setting.on or "On") or (setting.off or "Off")),
                     callback = function()
                         -- Show an input dialog to update the setting
                         local buttonDialog
@@ -767,7 +768,7 @@ function FanficMenu:onOpenSettings()
                             buttons = {
                                 {
                                     {
-                                        text = "On",
+                                        text = (setting.on or "On"),
                                         callback = function()
                                             Config:saveSetting(setting.setting, true)
                                             UIManager:close(buttonDialog)
@@ -781,12 +782,11 @@ function FanficMenu:onOpenSettings()
                                 },
                                 {
                                     {
-                                        text = "Off",
+                                        text = (setting.off or "Off"),
                                         is_enter_default = true,
                                         callback = function()
                                             Config:saveSetting(setting.setting, false)
                                             UIManager:close(buttonDialog)
-                                            menu_item.text = setting.text .. ": Off"
                                             self.menuWidget:switchItemTable(nil, generateMenuItems())
                                             self.menuWidget:updateItems()
                                             UIManager:show(InfoMessage:new({
