@@ -1733,6 +1733,13 @@ function AO3WebParser:parseUserPage(root)
         local total_bookmarks_text = total_bookmarks_element:getcontent()
         total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
 
+        -- Handle skipping the "My Bookmarks" element that appears in the header if the user is logged in
+        if not total_bookmarks then
+            total_bookmarks_element = root:select(total_bookmarks_search)[2]
+            total_bookmarks_text = total_bookmarks_element:getcontent()
+            total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
+        end
+
         total_bookmarks = tonumber(total_bookmarks)
     end
 
