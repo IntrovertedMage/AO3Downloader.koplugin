@@ -226,8 +226,8 @@ end
 
 function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
     local success, works, getNextPage = self.Fanfic:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id)
-    works.total =  works.total or total or 0
     if success then
+        works.total =  works.total or total or 0
         self.Fanfic:onShowFanficBrowser(works, getNextPage)
     else
         self.ui:showMessageBox("Error", "Failed to fetch works for category: " .. tostring(category))

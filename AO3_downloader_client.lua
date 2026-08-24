@@ -687,6 +687,67 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
 end
 
+function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_no)
+    
+    local login_status = self:GetSessionStatus()
+    local username = login_status.username
+    
+    local url
+    
+    url = T("%1/users/%2/readings", getAO3URL(), username)
+
+    page_no = page_no or 1
+
+    logger.dbg("AO3Downloader.koplugin: Fetching works from account history page. Username: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    local parameters = {["show"] = marked_for_later and "to-read" or "",["page"] = page_no}
+
+    local parameter_string = table.concat(
+        (function()
+            local parts = {}
+            for key, value in pairs(parameters) do
+                if value then
+                    table.insert(parts, string.format("%s=%s", key, value))
+                end
+            end
+            return parts
+        end)(),
+        "&"
+    )
+
+    url = url .. "?" .. parameter_string
+
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch account history. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+
+    local root = htmlparser.parse(html_body)
+
+    local works = nil
+
+    works = AO3WebParser:parseAccountHistory(root)
+
+    return {
+        success = true,
+        works = works,
+    }
+
+end
+
 function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     page_no = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
@@ -938,7 +999,7 @@ function AO3DownloaderClient:kudosWork(work_id)
     if request_result.status == 422 then
         return {
             success = false,
-            error = T("Work has already been kudosed by this user."),
+            error = T("You have already left kudos here. :)"),
         }
     end
 
@@ -1329,6 +1390,25 @@ function AO3WebParser:parseUserCollectionsPage(root)
     return collection_list
 end
 
+function AO3WebParser:parseAccountHistory(root)
+    local works = {}
+    local elements = root:select("li.work")
+
+    local count = 1
+
+    for _, element in ipairs(elements) do
+        local work = self:parseWorkElement(element)
+        if work then
+            table.insert(works, count, work)
+            count = count + 1
+        end
+    end
+
+    works["total"] = -1
+
+    return works
+end
+
 function AO3WebParser:parseWorkElement(element)
     local titleElement = element:select(".heading > a")[1]
     local restrictedElement = element:select("img[title='Restricted']")[1]
@@ -1602,13 +1682,12 @@ function AO3WebParser:parseWorkPage(root)
     end
 
     if #chapterData == 0 then
-        local single_chapter_title = root:select(".chapter.preface.group > h3.title")[1]
-
-        if single_chapter_title then
-            local content = single_chapter_title:getcontent()
-            local chapter_title = string.match(content, "</a>:%s*(.+)") or "Chapter 1"
+        local chapter_title_elements = root:select(".chapter.preface.group > h3.title")
+        for _, chapter_title_element in pairs(chapter_title_elements) do
+            local content = chapter_title_element:getcontent()
+            local chapter_title = string.match(content, "</a>:%s*(.+)") or ("Chapter " .. (#chapterData + 1))
             local chapter_id = string.match(content, "/chapters/(%d+)")
-            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = "1. " .. chapter_title })
+            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = tostring(#chapterData + 1) .. ". " .. chapter_title })
         end
     end
 
@@ -1793,6 +1872,13 @@ function AO3WebParser:parseUserPage(root)
     if total_bookmarks_element then
         local total_bookmarks_text = total_bookmarks_element:getcontent()
         total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
+
+        -- Handle skipping the "My Bookmarks" element that appears in the header if the user is logged in
+        if not total_bookmarks then
+            total_bookmarks_element = root:select(total_bookmarks_search)[2]
+            total_bookmarks_text = total_bookmarks_element:getcontent()
+            total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
+        end
 
         total_bookmarks = tonumber(total_bookmarks)
     end

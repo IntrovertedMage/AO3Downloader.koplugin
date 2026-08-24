@@ -334,6 +334,44 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
 
 end
 
+function Fanfic:getWorksFromAccountHistory(marked_for_later)
+    local NetworkMgr = require("ui/network/manager")
+
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false
+    end
+
+    local currentPage = 1
+
+    -- Define the function to fetch the next page for the selected fandom
+    local function fetchNextPage()
+        currentPage = currentPage + 1
+        local next_page_results =  AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, currentPage)
+        if not next_page_results.success then
+            UIManager:show(InfoMessage:new{
+                text = T("Error: %1", next_page_results.error),
+                icon = "notice-warning",
+            })
+        end
+
+        return next_page_results.works
+    end
+
+    -- Fetch the first page of results
+    local search_results = AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, currentPage)
+
+    if not search_results.success then
+        UIManager:show(InfoMessage:new{
+            text = T("Error: %1", search_results.error),
+            icon = "notice-warning",
+        })
+        return false
+    end
+
+    return true, search_results.works, fetchNextPage
+
+end
 
 function Fanfic:executeSearch(parameters)
     local NetworkMgr = require("ui/network/manager")

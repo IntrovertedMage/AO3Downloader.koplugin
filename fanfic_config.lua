@@ -22,7 +22,7 @@ local function createConfig()
         },
         filename_template = "%I",
         fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
-
+        show_current_chapter = true
     }
 
     function config:init()
