@@ -165,7 +165,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     }))
                                 else
                                     UIManager:show(InfoMessage:new({
-                                        text = "Error: " .. request_result.error .. self.current_fanfic.subscriptionID,
+                                        text = "Error: " .. request_result.error .. (self.current_fanfic.subscriptionID or ""),
                                     }))
                                 end
 
