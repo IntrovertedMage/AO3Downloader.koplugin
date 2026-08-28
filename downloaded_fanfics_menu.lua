@@ -194,7 +194,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                 callback = function()
                                                     -- Show detailed information
                                                     local details = string.format(
-                                                        "Fandoms: %s\n\nStatus: %s \nChapters: %s\nPublished: %s\nUpdated: %s\nAuthor: %s\n\nSummary:\n%s\n\nRating: %s\nCategory: %s\n\nTags:\nWarnings:\n%s\n\nRelationships:\n%s\n\nCharacters:\n%s\n\nOther Tags:\n%s\n\nStats: \nWords: %s \nHits: %s\nKudos: %s\nBookmarks: %s\nComments: %s",
+                                                        "Fandoms: %s\n\nStatus: %s \nChapters: %s\nPublished: %s\nUpdated: %s\nAuthor: %s\n\nSummary:\n%s\n\nRating: %s\nCategory: %s\n\nTags:\nWarnings:\n%s\n\nRelationships:\n%s\n\nCharacters:\n%s\n\nOther Tags:\n%s\n\nBookmarked: %s\nMarked for Later: %s\nSubscribed: %s\n\nStats: \nWords: %s \nHits: %s\nKudos: %s\nBookmarks: %s\nComments: %s",
                                                         (
                                                             #fanfic.fandoms > 0 and table.concat(fanfic.fandoms, ", ")
                                                             or "No fandoms available"
@@ -225,6 +225,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                             #fanfic.tags > 0 and table.concat(fanfic.tags, ", ")
                                                             or "No tags available"
                                                         ),
+                                                        fanfic.bookmarkID and "Yes (" .. tostring(fanfic.bookmarkID) ..")" or "No",
+                                                        fanfic.markedForLater and "Yes" or "No",
+                                                        fanfic.subscriptionID and "Yes (" .. fanfic.subscriptionID ..")" or "No",
                                                         fanfic.wordcount or "Unknown",
                                                         fanfic.hits or "0",
                                                         fanfic.kudos or "0",

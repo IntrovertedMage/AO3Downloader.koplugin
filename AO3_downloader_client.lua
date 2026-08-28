@@ -74,6 +74,16 @@ function encodeHelper:parseToCodepoints(str)
     return self:unescapeText(str)
 end
 
+function encodeHelper:parseFromHTML(str)
+    return encodeHelper:parseToCodepoints(
+                    str
+                        :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
+                        :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
+                        :gsub("<[^>]+>", "") -- Remove other HTML tags
+                        :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
+                )
+end
+
 function encodeHelper:generateParametersStringForm(params)
     local form_parts = {}
     for key, value in pairs(params) do
@@ -825,6 +835,49 @@ function AO3DownloaderClient:getUserPseuds(username)
     }
 end
 
+function AO3DownloaderClient:getAccountPseudID(username)
+    local url = T("%1/users/%2/pseuds/%2/edit", getAO3URL(), username)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if request_result.status == 404 then
+        return {
+            success = false,
+            error = T("Pseud edit page for '%1' not found.", username),
+        }
+    end
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch accound pseud ID. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+    local root = htmlparser.parse(html_body)
+    local pseud_id = AO3WebParser:parseAccountPseudID(root)
+
+    if not pseud_id then
+        return {
+            success = false,
+            error = T("Failed to parse accound pseud ID"),
+        }
+    end
+
+    return {
+        success = true,
+        pseud_id = pseud_id,
+    }
+end
+
 function AO3DownloaderClient:searchForUsers(search_query, page_no)
     logger.dbg("AO3Downloader.koplugin: Executing user search for query: " .. tostring(search_query) .. ", page no: " .. tostring(page_no))
     if not search_query or search_query == "" then
@@ -1062,6 +1115,330 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     }
 end
 
+function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
+    logger.dbg("AO3Downloader.koplugin: Marking work. Work ID: " .. tostring(work_id))
+    local login_status = self:GetSessionStatus()
+    if not login_status.success then
+        return {
+            success = false,
+            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
+        }
+    end
+
+    if not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User must be logged in to mark work."),
+        }
+    end
+
+    local authenticity_token_request = self:requestAO3Token()
+
+    if not authenticity_token_request.success then
+        return {
+            success = false,
+            error = T("Failed to retrieve AO3 token for marking work: %1", authenticity_token_request.error or "unknown error"),
+        }
+    end
+
+    local authenticity_token = authenticity_token_request.token
+
+    -- Mark As Read True, Mark For Later False
+    local kudos_url = T("%1/works/%2/%3", getAO3URL(), work_id, later_or_read and "mark_as_read" or "mark_for_later")
+
+    local response_body = {}
+    local headers = HTTPQueryHandler:get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    local form_data = encodeHelper:generateParametersStringForm({
+        ["authenticity_token"] = authenticity_token,
+        ["_method"] = "patch"
+    })
+    headers["Content-Length"] = tostring(#form_data)
+
+
+    local request = {
+        url = kudos_url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form_data),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if request_result.status == 302 then
+        return {
+            success = true,
+        }
+    end
+
+    return {
+        success = false,
+        error = T("Failed to mark work. Status: %1", request_result.status or "unknown error"),
+    }
+end
+
+function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
+    logger.dbg("AO3Downloader.koplugin: Setting subscription. Work ID: " .. tostring(work_id))
+
+    local login_status = self:GetSessionStatus()
+    if not login_status.success then
+        return {
+            success = false,
+            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
+        }
+    end
+
+    if not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User must be logged in to subscribe."),
+        }
+    end
+
+    local token_request = self:requestAO3Token()
+    if not token_request.success then
+        return {
+            success = false,
+            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
+        }
+    end
+
+    local authenticity_token = token_request.token
+
+    local url
+    local form
+
+    if not subscription_id then
+        url = T("%1/users/%2/subscriptions", getAO3URL(), login_status.username)
+
+        form = encodeHelper:generateParametersStringForm({
+            ["authenticity_token"] = authenticity_token,
+            ["subscription[subscribable_id]"] = tostring(work_id),
+            ["subscription[subscribable_type]"] = "Work",
+        })
+    else
+        if not subscription_id then
+            return {
+                success = false,
+                error = T("Subscription ID required to unsubscribe."),
+            }
+        end
+
+        url = T("%1/users/%2/subscriptions/%3",
+            getAO3URL(),
+            login_status.username,
+            subscription_id
+        )
+
+        form = encodeHelper:generateParametersStringForm({
+            ["authenticity_token"] = authenticity_token,
+            ["_method"] = "delete",
+            ["subscription[subscribable_id]"] = tostring(work_id),
+            ["subscription[subscribable_type]"] = "Work",
+        })
+    end
+
+    local response_body = {}
+    local headers = HTTPQueryHandler:get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+    headers["Content-Length"] = tostring(#form)
+    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+    headers["X-Requested-With"] = "XMLHttpRequest"
+    headers["X-CSRF-Token"] = authenticity_token
+
+    local request = {
+        url = url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form),
+    }
+
+    local result = HTTPQueryHandler:performHTTPRequest(request)
+
+    local response_text = table.concat(response_body)
+
+    if result.status == 201 then
+        local json = require("dkjson")
+        local decoded, _, err = json.decode(response_text)
+
+        if decoded then
+            return {
+                success = true,
+                subscription_id = tostring(decoded.item_id),
+            }
+        end
+
+        return {
+            success = true,
+        }
+    end
+    if result.status == 302 or result.status == 200 then
+        return {
+            success = true
+        }
+    end
+
+    return {
+        success = false,
+        error = T("Failed to update subscription. Status: %1", result.status or "unknown error"),
+    }
+end
+
+function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
+    logger.dbg("AO3Downloader.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
+
+    local login_status = self:GetSessionStatus()
+    if not login_status.success then
+        return {
+            success = false,
+            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
+        }
+    end
+
+    if not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User must be logged in to edit bookmarks."),
+        }
+    end
+
+    local token_request = self:requestAO3Token()
+    if not token_request.success then
+        return {
+            success = false,
+            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
+        }
+    end
+
+    local authenticity_token = token_request.token
+
+    local url
+    local form_data = {
+        ["authenticity_token"] = authenticity_token,
+        ["bookmark[bookmarker_notes]"] = notes or "",
+        ["bookmark[tag_string]"] = tags or "",
+        ["bookmark[collection_names]"] = collections or "",
+        ["bookmark[private]"] = private and "1" or "0",
+        ["bookmark[rec]"] = rec and "1" or "0",
+    }
+
+    if bookmark_id then
+        url = T("%1/bookmarks/%2", getAO3URL(), bookmark_id)
+        form_data["_method"] = "put"
+        form_data["commit"] = "Update"
+    else
+        url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
+        form_data["commit"] = "Create"
+
+        local pseud_result = AO3DownloaderClient:getAccountPseudID(login_status.username)
+
+        if not pseud_result.success then
+            return {
+                success = false,
+                error = T("Error: %1", pseud_result.error)
+            }
+        end
+
+        form_data["bookmark[pseud_id]"] = tostring(pseud_result.pseud_id)
+    end
+
+    local form = encodeHelper:generateParametersStringForm(form_data)
+
+    local response_body = {}
+    local headers = HTTPQueryHandler:get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+    headers["Content-Length"] = tostring(#form)
+    headers["X-CSRF-Token"] = authenticity_token
+
+    local request = {
+        url = url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form),
+    }
+
+    local result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if result.status == 302 or result.status == 200 then
+        return {
+            success = true,
+            bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
+        }
+    end
+
+    return {
+        success = false,
+        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
+    }
+end
+
+function AO3DownloaderClient:deleteBookmark(bookmark_id)
+    logger.dbg("AO3Downloader.koplugin: Deleting bookmark. Bookmark ID: " .. tostring(bookmark_id))
+
+    local login_status = self:GetSessionStatus()
+    if not login_status.success then
+        return {
+            success = false,
+            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
+        }
+    end
+
+    if not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User must be logged in to delete bookmarks."),
+        }
+    end
+
+    local token_request = self:requestAO3Token()
+    if not token_request.success then
+        return {
+            success = false,
+            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
+        }
+    end
+
+    local authenticity_token = token_request.token
+
+    local url = T("%1/bookmarks/%2", getAO3URL(), bookmark_id)
+    local form_data = {
+        ["authenticity_token"] = authenticity_token,
+        ["_method"] = "delete"
+    }
+
+    local form = encodeHelper:generateParametersStringForm(form_data)
+
+    local response_body = {}
+    local headers = HTTPQueryHandler:get_default_headers()
+    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+    headers["Content-Length"] = tostring(#form)
+    headers["X-CSRF-Token"] = authenticity_token
+
+    local request = {
+        url = url,
+        method = "POST",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+        source = ltn12.source.string(form),
+    }
+
+    local result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if result.status == 302 then
+        return {
+            success = true,
+        }
+    end
+
+    return {
+        success = false,
+        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
+    }
+end
 
 
 -- AO3WebParser
@@ -1208,12 +1585,7 @@ function AO3WebParser:parseUserSeriesPage(root)
             end
 
             local summaryElement = element:select(".summary")[1]
-            local summary = summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
-                :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                :gsub("<[^>]+>", "") -- Remove other HTML tags
-                :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
-            )
+            local summary = summaryElement and encodeHelper:parseFromHTML(summaryElement:getcontent())
 
             local wordCountElement = element:select("dd.words")[1]
             logger.dbg(wordCountElement and wordCountElement:getcontent():gsub(",", "") or "No word count element found")
@@ -1392,14 +1764,7 @@ function AO3WebParser:parseWorkElement(element)
 
         -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
         local summary = summaryElement
-                and encodeHelper:parseToCodepoints(
-                    summaryElement
-                        :getcontent()
-                        :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                        :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                        :gsub("<[^>]+>", "") -- Remove other HTML tags
-                        :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-                )
+            and encodeHelper:parseFromHTML(summaryElement:getcontent())
             or "No summary available"
 
         -- Remove leading and trailing whitespace from the title
@@ -1482,6 +1847,11 @@ function AO3WebParser:parseWorkPage(root)
     local categoryElement = root:select(".category > ul > li > a")[1]
     local iswipElement = root:select("dt.status")[1]
 
+    -- Extract logged in metadata
+    local markedForLaterElement = root:select(".mark > form > button")[1]
+    local subscriptionFormElement = root:select(".subscribe > form")[1]
+    local bookmarkFormElement = root:select("#bookmark-form > form")[1]
+
     -- Extract additional metadata
     local fandomElement = root:select(".fandom > ul")[1]
     local publishedElement = root:select("dd.published")[1]
@@ -1518,14 +1888,7 @@ function AO3WebParser:parseWorkPage(root)
     local gifted_to = giftElements and table.concat(giftedTo_table, ", ") or nil
 
     local summary = summaryElement
-        and encodeHelper:parseToCodepoints(
-            summaryElement
-            :getcontent()
-            :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-            :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-            :gsub("<[^>]+>", "") -- Remove other HTML tags
-            :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-        )
+        and encodeHelper:parseFromHTML(summaryElement:getcontent())
         or "No summary available"
 
     local chapterData = {}
@@ -1607,6 +1970,28 @@ function AO3WebParser:parseWorkPage(root)
         or "Unknown chapters"
     local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent()) or "Unknown language"
 
+    -- Extract logged in metadata values
+    local markedForLater = markedForLaterElement ~= nil and encodeHelper:parseToCodepoints(markedForLaterElement:getcontent()) == "Mark as Read"
+    local subscriptionID = subscriptionFormElement and subscriptionFormElement.attributes and subscriptionFormElement.attributes.id:match("edit_subscription_(%d+)") or false
+    local bookmarkID = bookmarkFormElement and bookmarkFormElement.attributes and bookmarkFormElement.attributes.action:match("/bookmarks/(%d+)") or false
+
+    local bookmarkContent = {}
+
+    local bookmarkNotesElement = root:select("#bookmark_notes")[1]
+    bookmarkContent.notes = bookmarkNotesElement and encodeHelper:parseFromHTML(bookmarkNotesElement:getcontent()) or ""
+
+    local bookmarkTagElement = root:select("#bookmark_tag_string")[1]
+    bookmarkContent.tags = bookmarkTagElement and bookmarkTagElement.attributes and bookmarkTagElement.attributes.value or ""
+
+    local bookmarkCollectionElement = root:select("#bookmark_collection_names")[1]
+    bookmarkContent.collections = bookmarkCollectionElement and bookmarkCollectionElement.attributes and bookmarkCollectionElement.attributes.value or ""
+
+    local bookmarkPrivElement = root:select("#bookmark_private")[1]
+    bookmarkContent.private = bookmarkPrivElement and bookmarkPrivElement.attributes and bookmarkPrivElement.attributes.checked=="checked" or false
+
+    local bookmarkRecElement = root:select("#bookmark_rec")[1]
+    bookmarkContent.rec = bookmarkRecElement and bookmarkRecElement.attributes and bookmarkRecElement.attributes.checked=="checked" or false
+
     -- Extract EPUB link
     local epub_link = nil
     for _, e in ipairs(epubElement) do
@@ -1655,6 +2040,10 @@ function AO3WebParser:parseWorkPage(root)
         rating = ratingElement and ratingElement:getcontent(),
         category = categoryElement and categoryElement:getcontent(),
         iswip = iswip,
+        markedForLater = markedForLater,
+        subscriptionID = subscriptionID,
+        bookmarkID = bookmarkID,
+        bookmarkContent = bookmarkContent
     }
 
     return work
@@ -1816,6 +2205,15 @@ function AO3WebParser:parseUserPseuds(root)
     end
 
     return pseuds
+end
+
+function AO3WebParser:parseAccountPseudID(root)
+
+    local element = root:select(".edit_pseud")[1]
+
+    local pseud_id = element and element.attributes and element.attributes.id:match("edit_pseud_(%d+)") or false
+
+    return pseud_id
 end
 
 function AO3WebParser:parseUserSearchResults(root)
