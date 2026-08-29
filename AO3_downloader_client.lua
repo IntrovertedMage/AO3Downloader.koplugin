@@ -1410,7 +1410,7 @@ function AO3WebParser:parseAccountHistory(root)
 end
 
 function AO3WebParser:parseWorkElement(element)
-    local titleElement = element:select(".heading > a")[1]
+    local titleElement = element:select("h4.heading > a")[1] or element:select("h4.heading")[1]
     local restrictedElement = element:select("img[title='Restricted']")[1]
     local authorElements = element:select(".heading > a[rel='author']")
     local giftElements = element:select(".heading > a[href$='/gifts']")
@@ -1434,7 +1434,7 @@ function AO3WebParser:parseWorkElement(element)
 
     if titleElement then
         -- Extract the work ID from the href attribute
-        local href = titleElement.attributes.href
+        local href = titleElement.attributes.href or ""
         local id = tonumber(href:match("/works/(%d+)")) -- Extract the numeric ID and convert to number
         local isRestricted = restrictedElement and true or false -- Set to true if restrictedElement exists, otherwise false
 
