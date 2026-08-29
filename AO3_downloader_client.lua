@@ -2185,7 +2185,7 @@ function AO3WebParser:parseUserPseuds(root)
 
             if worksElement then
                 local works_text = worksElement:getcontent()
-                work_count = tonumber(works_text:match("([%d,]+) works"):gsub(",", ""), 10)
+                work_count = tonumber(works_text:match("([%d,]+) work"):gsub(",", ""), 10)
             end
 
             if recsElement then
