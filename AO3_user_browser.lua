@@ -151,11 +151,11 @@ function AO3UserBrowser:generateMenuTable()
         "Collections:",
         self.userData.total_collections,
         callback = function()
-            self:openFanficBrowserForCategory("collections", self.userData.total_collections, nil)
+            self:openUserCollectionsList()
         end,
     }
 
-    -- table.insert(kv_pairs, collections_item)
+    table.insert(kv_pairs, collections_item)
 
     local gifts_item = {
         "Gifted works:",
@@ -292,6 +292,63 @@ function AO3UserBrowser:openUserSeriesList()
         end
 
         self:GoDownInMenu("Series", series_menu_kv)
+    end
+end
+
+function AO3UserBrowser:openUserCollectionsList()
+    local success, collectionsList, getNextPage = self.Fanfic:getCollectionsFromUserPage(self.userData.username)  --
+    if success then
+        local collections_menu_kv = {}
+        table.insert(collections_menu_kv, {
+            "← Back to profile",
+            "",
+            separator = true,
+            callback = function()
+                self:GoUpInMenu()
+            end,
+        })
+        for __, collection in pairs(collectionsList) do
+            collections_menu_kv[#collections_menu_kv].separator = true
+
+            table.insert(collections_menu_kv, {
+                collection.title,
+                "",
+                callback = function()
+                    local success, collectionWorks, fetchNextPage = self.Fanfic:getWorksFromCollection(collection.id)
+                    if success == false then
+                        return
+                    end
+
+                    collectionWorks.total = collection.work_count or 0
+                    self.Fanfic:onShowFanficBrowser(collectionWorks, fetchNextPage)
+                end,
+                seperator = true,
+            })
+            table.insert(collections_menu_kv,{
+                "Tags:"
+                , table.concat(collection.tags, ", "),
+            })
+            table.insert(collections_menu_kv,{
+                "Work count:"
+                , collection.work_count,
+            })
+            table.insert(collections_menu_kv,{
+                "Author:"
+                , collection.author,
+            })
+            table.insert(collections_menu_kv,{
+                "Date:"
+                , collection.date_posted,
+            })
+            if collection.summary and collection.summary ~= "" then
+                table.insert(collections_menu_kv,{
+                    "Summary:"
+                    , collection.summary,
+                })
+            end
+        end
+
+        self:GoDownInMenu("Collections", collections_menu_kv)
     end
 end
 
