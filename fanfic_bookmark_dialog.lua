@@ -133,10 +133,18 @@ function FanficBookmarkDialog:init()
     self.buttons = { { }}
     self.buttons[1] = buttons
     InputDialog.init(self)
+
+    if self.current_fanfic.bookmarkID then
+        self.button_table:getButtonById("save"):disable()
+        self:refreshButtons()
+    end
+
     self.bookmark_notes_field = self._input_widget
     self.bookmark_notes_field:setText(self.bookmark_notes_original or "")
-    self.bookmark_notes_field.callback = function(self)
-        self:setModified()
+    self.bookmark_notes_field.edit_callback = function(is_edited)
+        if is_edited then
+            self:setModified()
+        end
     end
 
 
@@ -149,8 +157,10 @@ function FanficBookmarkDialog:init()
         hint = "Enter tags separated by commas",
         face = Font:getFace("cfont", 16),
 
-        callback = function(self, text)
-            self:setModified()
+        edit_callback = function(is_edited)
+            if is_edited then
+                self:setModified()
+            end
         end
     }
 
@@ -163,8 +173,10 @@ function FanficBookmarkDialog:init()
         hint = "Enter collections separated by commas",
         face = Font:getFace("cfont", 16),
 
-        callback = function(self, text)
-            self:setModified()
+        edit_callback = function(is_edited)
+            if is_edited then
+                self:setModified()
+            end
         end
     }
 
