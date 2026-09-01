@@ -185,6 +185,26 @@ function FanficReader:addToMainMenu(menu_items)
                                      return
                                 end
 
+                                local request_result = AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id)
+                                if  request_result.success then
+                                    self.current_fanfic.bookmarkContent = request_result.bookmark_data
+
+                                    if request_result.bookmark_id then
+                                        self.current_fanfic.bookmarkID = request_result.bookmark_id
+                                    else
+                                        self.current_fanfic.bookmarkID = false
+                                    end
+                                    DownloadedFanfics.update(self.current_fanfic, false)
+
+                                    UIManager:show(InfoMessage:new({
+                                        text = "Fetched current Bookmark data",
+                                    }))
+                                else
+                                    UIManager:show(InfoMessage:new({
+                                        text = "Error: " .. request_result.error,
+                                    }))
+                                end
+
 
                                 local fanficBookmark_dialog =  FanficBookmarkDialog:new({
                                     current_fanfic = self.current_fanfic,

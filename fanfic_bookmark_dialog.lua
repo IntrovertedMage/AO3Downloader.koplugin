@@ -7,6 +7,11 @@ local Size = require("ui/size")
 local CheckButton = require("ui/widget/checkbutton")
 local UIManager = require("ui/uimanager")
 local ButtonDialog = require("ui/widget/buttondialog")
+local logger = require("logger")
+local Button = require("ui/widget/button")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local AO3DownloaderClient = require("AO3_downloader_client")
+local _ = require("gettext")
 
 local FanficBookmarkDialog = InputDialog:extend{
     title = "Bookmark Fanfic",
@@ -154,7 +159,7 @@ function FanficBookmarkDialog:init()
         focused = false,
         show_parent = self,
         parent = self,
-        hint = "Enter tags separated by commas",
+        hint = "Enter tags separated by commas \n",
         face = Font:getFace("cfont", 16),
 
         edit_callback = function(is_edited)
@@ -165,19 +170,33 @@ function FanficBookmarkDialog:init()
     }
 
     self.bookmark_collections_field = InputText:new {
-        width = self.width - Size.padding.default - Size.border.inputtext - 30,
+        width = self.width - Size.padding.default - Size.border.inputtext - 80,
         text = self.bookmark_collections_original,
         focused = false,
         show_parent = self,
         parent = self,
-        hint = "Enter collections separated by commas",
+        hint = "Use search button or enter collection ids split by commas",
         face = Font:getFace("cfont", 16),
-
         edit_callback = function(is_edited)
             if is_edited then
                 self:setModified()
             end
         end
+    }
+
+    -- Create search button for collections
+    local search_button = Button:new{
+        text = "\u{f002}",
+        callback = function()
+            self:collectionSearchWidget()
+        end,
+        show_parent = self,
+    }
+
+    -- Create horizontal group with collections field and search button
+    local collections_group = HorizontalGroup:new{
+        self.bookmark_collections_field,
+        search_button,
     }
 
     self.bookmark_private_field = CheckButton:new {
@@ -209,7 +228,7 @@ function FanficBookmarkDialog:init()
     }
 
     self:addWidget(self.bookmark_tags_field)
-    self:addWidget(self.bookmark_collections_field)
+    self:addWidget(collections_group)
     self:addWidget(self.bookmark_private_field)
     self:addWidget(self.bookmark_rec_field)
 
@@ -232,7 +251,159 @@ function FanficBookmarkDialog:setModified()
     end
 end
 
+function FanficBookmarkDialog:getCollectionsFromField()
+    local collections_text = self.bookmark_collections_field:getText()
+    local collections = {}
+    if collections_text and collections_text ~= "" then
+        for collection in collections_text:gmatch("[^,]+") do
+            table.insert(collections, collection:match("^%s*(.-)%s*$"))  -- Trim whitespace
+        end
+    end
+    return collections
+end
 
+function FanficBookmarkDialog:updateCollectionsField(collections)
+    local collections_text = table.concat(collections, ", ")
+    self.bookmark_collections_field:setText(collections_text)
+    self:setModified()
+end
+
+function FanficBookmarkDialog:collectionSearchWidget()
+    local inputDialog
+    inputDialog = InputDialog:new({
+        title = "Search for Collections",
+        input = "",
+        input_type = "text",
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(inputDialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local value = inputDialog:getInputText()
+                        if value == "" then
+                            return
+                        end
+                        local success, request_result = pcall(function()
+                            return AO3DownloaderClient:searchForCollections(value)
+                        end)
+                        logger.dbg("AO3Downloader.koplugin: Collection search results: " .. tostring(value)) --- IGNORE ---
+                        if success and request_result.success then
+                            inputDialog:onCloseKeyboard()
+                            self:collectionSearchSelectionWidget(
+                                "Select collections to add",
+                                request_result.collections
+                            )
+                            UIManager:close(inputDialog)
+                        else
+                            UIManager:show(require("ui/widget/infomessage"):new({
+                                text = "Error searching collections: " .. (request_result and request_result.error or "Unknown error"),
+                            }))
+                        end
+                    end,
+                },
+            },
+        },
+    })
+    UIManager:show(inputDialog)
+    inputDialog:onShowKeyboard()
+end
+
+function FanficBookmarkDialog:collectionSearchSelectionWidget(title, collection_results)
+    if not collection_results or #collection_results == 0 then
+        UIManager:show(require("ui/widget/infomessage"):new({
+            text = "No collections found.",
+        }))
+        return
+    end
+
+    local current_collections = self:getCollectionsFromField()
+    local buttons = {}
+
+    -- Back button
+    table.insert(buttons, {
+        {
+            text = "← Back to Search",
+            callback = function()
+                if self.collection_dialog then
+                    UIManager:close(self.collection_dialog)
+                end
+                self:collectionSearchWidget()
+            end,
+        },
+    })
+
+    -- Create buttons for each collection (up to 5 per row)
+    local row = {}
+    for __, collection in pairs(collection_results) do
+        local collection_name = collection.name
+
+        local collection_id = collection.name:match("^(.-):")
+        local is_selected = false
+
+        for _, selected_col in ipairs(current_collections) do
+            if selected_col == collection_id then
+                is_selected = true
+                break
+            end
+        end
+
+        local button_text = is_selected and "✓ " .. collection_name or collection_name
+
+        table.insert(row, {
+            text = button_text,
+            callback = function()
+                local collections = self:getCollectionsFromField()
+                local found = false
+
+                -- Toggle selection
+                for i, col in ipairs(collections) do
+                    if col == collection_id then
+                        table.remove(collections, i)
+                        found = true
+                        break
+                    end
+                end
+
+                if not found then
+                    table.insert(collections, collection_id)
+                end
+
+                self:updateCollectionsField(collections)
+
+                -- Refresh dialog
+                if self.collection_dialog then
+                    UIManager:close(self.collection_dialog)
+                end
+                self:collectionSearchSelectionWidget(title, collection_results)
+            end,
+        })
+
+        -- Start a new row after 2 buttons
+        if #row >= 2 then
+            table.insert(buttons, row)
+            row = {}
+        end
+    end
+
+    -- Add remaining buttons
+    if #row > 0 then
+        table.insert(buttons, row)
+    end
+
+    self.collection_dialog = ButtonDialog:new{
+        title = title,
+        buttons = buttons,
+    }
+
+    UIManager:show(self.collection_dialog)
+end
 
 -- copied from MultiInputDialog
 function FanficBookmarkDialog:onSwitchFocus(inputbox)
