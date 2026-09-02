@@ -7,10 +7,8 @@ local Size = require("ui/size")
 local CheckButton = require("ui/widget/checkbutton")
 local UIManager = require("ui/uimanager")
 local ButtonDialog = require("ui/widget/buttondialog")
-local logger = require("logger")
 local Button = require("ui/widget/button")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
-local AO3DownloaderClient = require("AO3_downloader_client")
 local _ = require("gettext")
 
 local FanficBookmarkDialog = InputDialog:extend{
