@@ -238,13 +238,14 @@ function FanficReader:addToMainMenu(menu_items)
                                             UIManager:show(InfoMessage:new({
                                                 text = originalBMID and "Updated Bookmark" or "Created Bookmark",
                                             }))
+                                            return true
                                         else
                                             UIManager:show(InfoMessage:new({
                                                 text = "Error: " .. request_result.error,
                                             }))
+                                            return false
                                         end
 
-                                        return true
                                     end,
                                     delete_dialog_callback = function(bookmark_data)
                                         local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
@@ -257,13 +258,14 @@ function FanficReader:addToMainMenu(menu_items)
                                             UIManager:show(InfoMessage:new({
                                                 text = "Deleted Bookmark",
                                             }))
+                                            return true
                                         else
                                             UIManager:show(InfoMessage:new({
                                                 text = "Error: " .. request_result.error,
                                             }))
+                                            return false
                                         end
 
-                                        return true
                                     end,
 
                                 })
