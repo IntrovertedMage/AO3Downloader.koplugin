@@ -1502,6 +1502,21 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
     local result = HTTPQueryHandler:performHTTPRequest(request)
 
     if result.status == 302 or result.status == 200 then
+        local body_content = table.concat(response_body)
+        local root = htmlparser.parse(body_content)
+
+        if (root:select("div.#error") and #root:select("div.#error") > 0) then
+            local error_message = root:select("div.#error")[1]:getcontent()
+            -- remove htmml tags from error message and convert code points eg &#39; to characters
+            error_message = error_message:gsub("<[^>]+>", "")
+            error_message = encodeHelper:unescapeText(error_message)
+
+            return {
+                success = false,
+                error = T("Failed to update bookmark. Error message: %1", error_message or "unknown error"),
+            }
+        end
+
         return {
             success = true,
             bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
