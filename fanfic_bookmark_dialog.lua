@@ -269,6 +269,8 @@ function FanficBookmarkDialog:updateCollectionsField(collections)
 end
 
 function FanficBookmarkDialog:collectionSearchWidget()
+    self:onCloseKeyboard()
+
     local inputDialog
     inputDialog = InputDialog:new({
         title = "Search for Collections",
@@ -295,11 +297,11 @@ function FanficBookmarkDialog:collectionSearchWidget()
                         end)
                         logger.dbg("AO3Downloader.koplugin: Collection search results: " .. tostring(value)) --- IGNORE ---
                         if success and request_result.success then
-                            inputDialog:onCloseKeyboard()
                             self:collectionSearchSelectionWidget(
                                 "Select collections to add",
                                 request_result.collections
                             )
+                            inputDialog:onCloseKeyboard()
                             UIManager:close(inputDialog)
                         else
                             UIManager:show(require("ui/widget/infomessage"):new({
