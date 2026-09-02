@@ -196,13 +196,12 @@ function FanficReader:addToMainMenu(menu_items)
                                     end
                                     DownloadedFanfics.update(self.current_fanfic, false)
 
-                                    UIManager:show(InfoMessage:new({
-                                        text = "Fetched current Bookmark data",
-                                    }))
                                 else
-                                    UIManager:show(InfoMessage:new({
+                                    local info_message = InfoMessage:new({
                                         text = "Error: " .. request_result.error,
-                                    }))
+                                    })
+                                    info_message[1].ignore = "height"
+                                    UIManager:show(info_message)
                                 end
 
 
