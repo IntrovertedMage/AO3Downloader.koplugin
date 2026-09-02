@@ -698,8 +698,16 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 end
 
 function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_no)
-    
+
     local login_status = self:GetSessionStatus()
+
+    if not login_status.success or not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User is not logged in. Please log in to access " .. (marked_for_later and "marked for later list." or "account history.")),
+        }
+    end
+
     local username = login_status.username
     
     local url
@@ -989,6 +997,63 @@ function AO3DownloaderClient:searchForUsers(search_query, page_no)
         success = true,
         result_users = users,
     }
+end
+
+function AO3DownloaderClient:searchForCollections(search_query)
+    logger.dbg("AO3Downloader.koplugin: Executing collection search for query: " .. tostring(search_query))
+    if (not search_query or search_query == "") then
+        return {
+            success = false,
+            error = "Collection search query cannot be empty"
+        }
+    end
+
+    local encoded_query = encodeHelper:urlEncode(search_query)
+
+    local url = string.format(
+        "%s/autocomplete/collection_title?term=%s",
+        getAO3URL(),
+        encoded_query
+    )
+
+    local response_body = {}
+    local headers = HTTPQueryHandler:get_default_headers()
+    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+    headers["X-Requested-With"] = "XMLHttpRequest"
+    headers["Accept-Encoding"] = nil
+
+    local request = {
+        url = url,
+        method = "GET",
+        headers = headers,
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("HTTP collection search request failed. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local results = table.concat(response_body)
+    local json = require("dkjson")
+    local success, collection_results = pcall(json.decode, results)
+
+    if not success then
+        return {
+            success = false,
+            error = T("Failed to parse collection search results."),
+        }
+    end
+
+    return {
+        success = true,
+        collections = collection_results,
+    }
+
 end
 
 function AO3DownloaderClient:kudosWork(work_id)
@@ -1352,6 +1417,87 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
     }
 end
 
+function AO3DownloaderClient:getUsersWorkBookmark(work_id)
+    logger.dbg("AO3Downloader.koplugin: Fetching bookmark for work. Work ID: " .. tostring(work_id))
+
+    local login_status = self:GetSessionStatus()
+    if not login_status.success then
+        return {
+            success = false,
+            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
+        }
+    end
+
+    if not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User must be logged in to fetch bookmarks."),
+        }
+    end
+
+    local url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
+
+    local response_body = {}
+
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch bookmark. Status: %1", result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+    local root = htmlparser.parse(html_body)
+
+
+    local bookmark_trigger_button = root:select("a.bookmark_form_trigger_for_" .. work_id)[1]
+    if not bookmark_trigger_button  and bookmark_trigger_button:getcontent() ~= "Edit Bookmark" then
+        return {
+            success = false,
+            error = T("Bookmark not found from this user for work ID: %1", work_id),
+        }
+    end
+
+    local bookmark_form_url = T("%1%2", getAO3URL(), bookmark_trigger_button.attributes["href"])
+
+    local request = {
+        url = bookmark_form_url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch bookmark form. Status: %1", result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+    logger.dbg("AO3Downloader.koplugin: Bookmark form response body: " .. tostring(html_body))
+    -- look foor bookmark_div.html("...") and parse html
+
+    local root = htmlparser.parse(html_body)
+
+    local bookmark_data = AO3WebParser:parseUsersWorkBookmark(root)
+
+    return {
+        success = true,
+        bookmark_data = bookmark_data,
+        bookmark_id = bookmark_trigger_button.attributes["href"]:match("/bookmarks/(%d+)/edit")
+    }
+end
+
 function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
     logger.dbg("AO3Downloader.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
 
@@ -1429,6 +1575,21 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
     local result = HTTPQueryHandler:performHTTPRequest(request)
 
     if result.status == 302 or result.status == 200 then
+        local body_content = table.concat(response_body)
+        local root = htmlparser.parse(body_content)
+
+        if (root:select("div.#error") and #root:select("div.#error") > 0) then
+            local error_message = root:select("div.#error")[1]:getcontent()
+            -- remove htmml tags from error message and convert code points eg &#39; to characters
+            error_message = error_message:gsub("<[^>]+>", "")
+            error_message = encodeHelper:unescapeText(error_message)
+
+            return {
+                success = false,
+                error = T("Failed to update bookmark. Error message: %1", error_message or "unknown error"),
+            }
+        end
+
         return {
             success = true,
             bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
@@ -2411,7 +2572,56 @@ function AO3WebParser:parseUserSearchResults(root)
     return users
 end
 
+function AO3WebParser:parseUsersWorkBookmark(root)
+    local bookmark_details = {
+        notes = "",
+        tags = "",
+        collections = "",
+        private = false,
+        rec = false,
+    }
 
+    local bookmarkForm = root:select("#bookmark-form > form")[1]
+
+
+    if not bookmarkForm then
+        return bookmark_details
+    end
+
+    bookmark_details.notes = bookmarkForm:select("textarea#bookmark_notes")[1] and encodeHelper:parseFromHTML(root:select("textarea#bookmark_notes")[1]:getcontent()) or ""
+
+    -- Tags are stored in a text input field as comma-separated values
+    local tags_input = bookmarkForm:select("input#bookmark_tag_string")[1]
+    if tags_input and tags_input.attributes and tags_input.attributes.value then
+        local tags_string = tags_input.attributes.value
+        -- Split by comma and trim whitespace
+        for tag in tags_string:gmatch("([^,]+)") do
+            tag = tag:match("^%s*(.-)%s*$") -- trim whitespace
+            if tag and tag ~= "" then
+                bookmark_details.tags = bookmark_details.tags .. (bookmark_details.tags ~= "" and ", " or "") .. tag
+            end
+        end
+    end
+
+    -- Collections are stored in a text input field, not as li.added.tag elements
+    local collections_input = bookmarkForm:select("input#bookmark_collection_names")[1]
+    if collections_input and collections_input.attributes and collections_input.attributes.value then
+        local collections_string = collections_input.attributes.value
+        -- Split by comma and trim whitespace
+        for collection in collections_string:gmatch("([^,]+)") do
+            collection = collection:match("^%s*(.-)%s*$") -- trim whitespace
+            if collection and collection ~= "" then
+                bookmark_details.collections = bookmark_details.collections .. (bookmark_details.collections ~= "" and ", " or "") .. collection
+            end
+        end
+    end
+
+    bookmark_details.private = bookmarkForm:select("input#bookmark_private")[1] and bookmarkForm:select("input#bookmark_private")[1].attributes.checked == "checked" or false
+
+    bookmark_details.rec = bookmarkForm:select("input#bookmark_rec")[1] and bookmarkForm:select("input#bookmark_rec")[1].attributes.checked == "checked" or false
+
+    return bookmark_details
+end
 -- HTTPQueryHandler
 HTTPQueryHandler.cookies = {}
 
