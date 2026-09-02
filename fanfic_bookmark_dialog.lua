@@ -187,6 +187,7 @@ function FanficBookmarkDialog:init()
     -- Create search button for collections
     local search_button = Button:new{
         text = "\u{f002}",
+        width = 60,
         callback = function()
             self:collectionSearchWidget()
         end,
