@@ -182,7 +182,7 @@ function FanficReader:addToMainMenu(menu_items)
                                 local NetworkMgr = require("ui/network/manager")
                                 if not NetworkMgr:isConnected() then
                                     NetworkMgr:runWhenConnected()
-                                     return
+                                     return false
                                 end
 
                                 local request_result = AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id)
@@ -216,7 +216,7 @@ function FanficReader:addToMainMenu(menu_items)
                                         local NetworkMgr = require("ui/network/manager")
                                         if not NetworkMgr:isConnected() then
                                             NetworkMgr:runWhenConnected()
-                                            return
+                                            return false
                                         end
 
                                         local request_result = AO3DownloaderClient:updateBookmark(
@@ -258,7 +258,7 @@ function FanficReader:addToMainMenu(menu_items)
                                         local NetworkMgr = require("ui/network/manager")
                                         if not NetworkMgr:isConnected() then
                                             NetworkMgr:runWhenConnected()
-                                            return
+                                            return false
                                         end
 
                                         local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
