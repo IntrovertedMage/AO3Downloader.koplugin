@@ -170,7 +170,7 @@ function FanficBookmarkDialog:init()
     }
 
     self.bookmark_collections_field = InputText:new {
-        width = self.width - Size.padding.default - Size.border.inputtext - 80,
+        width = ((self.width - 30) / 5) * 4 - Size.padding.default - Size.border.inputtext,
         text = self.bookmark_collections_original,
         focused = false,
         show_parent = self,
@@ -187,7 +187,7 @@ function FanficBookmarkDialog:init()
     -- Create search button for collections
     local search_button = Button:new{
         text = "\u{f002}",
-        width = 60,
+        width = ((self.width - 30) / 5),
         callback = function()
             self:collectionSearchWidget()
         end,
@@ -202,6 +202,7 @@ function FanficBookmarkDialog:init()
 
     self.bookmark_private_field = CheckButton:new {
         text = "Private",
+        width = self.width - 30,
         checked = self.bookmark_private,
         show_parent = self,
         parent = self,
@@ -216,6 +217,7 @@ function FanficBookmarkDialog:init()
 
     self.bookmark_rec_field = CheckButton:new {
         text = "Rec",
+        width = self.width - 30,
         checked = self.bookmark_rec,
         show_parent = self,
         parent = self,
