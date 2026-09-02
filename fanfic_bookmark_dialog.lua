@@ -36,6 +36,7 @@ local FanficBookmarkDialog = InputDialog:extend{
     save_bookmark_callback = nil,
     delete_bookmark_callback = nil,
     close_widget_callback = nil,
+    search_collection_callback = nil,
 
 }
 
@@ -293,20 +294,16 @@ function FanficBookmarkDialog:collectionSearchWidget()
                         if value == "" then
                             return
                         end
-                        local success, request_result = pcall(function()
-                            return AO3DownloaderClient:searchForCollections(value)
-                        end)
-                        if success and request_result.success then
+
+                        local collections_result = self.search_collection_callback(value)
+
+                        if collections_result then
                             self:collectionSearchSelectionWidget(
                                 "Select collections to add",
-                                request_result.collections
+                                collections_result
                             )
                             inputDialog:onCloseKeyboard()
                             UIManager:close(inputDialog)
-                        else
-                            UIManager:show(require("ui/widget/infomessage"):new({
-                                text = "Error searching collections: " .. (request_result and request_result.error or "Unknown error"),
-                            }))
                         end
                     end,
                 },

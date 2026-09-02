@@ -270,6 +270,20 @@ function FanficReader:addToMainMenu(menu_items)
 
                                     end,
 
+                                    search_collection_callback = function(collection_name)
+                                        local request_result = AO3DownloaderClient:searchCollection(collection_name)
+
+                                        if request_result.success then
+                                            return request_result.collection_data
+                                        else
+                                            logger.dbg("Error searching collections: " .. request_result.error)
+                                            UIManager:show(InfoMessage:new({
+                                                text = "Error: " .. request_result.error,
+                                            }))
+                                            return nil
+                                        end
+                                    end
+
                                 })
                                 fanficBookmark_dialog.close_widget_callback = function()
                                     UIManager:close(fanficBookmark_dialog)

@@ -665,8 +665,16 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 end
 
 function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_no)
-    
+
     local login_status = self:GetSessionStatus()
+
+    if not login_status.success or not login_status.logged_in then
+        return {
+            success = false,
+            error = T("User is not logged in. Please log in to access " .. (marked_for_later and "marked for later list." or "account history.")),
+        }
+    end
+
     local username = login_status.username
     
     local url
