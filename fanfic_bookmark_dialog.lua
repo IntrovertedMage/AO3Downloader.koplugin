@@ -298,7 +298,6 @@ function FanficBookmarkDialog:collectionSearchWidget()
                         local success, request_result = pcall(function()
                             return AO3DownloaderClient:searchForCollections(value)
                         end)
-                        logger.dbg("AO3Downloader.koplugin: Collection search results: " .. tostring(value)) --- IGNORE ---
                         if success and request_result.success then
                             self:collectionSearchSelectionWidget(
                                 "Select collections to add",

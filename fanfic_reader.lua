@@ -240,6 +240,7 @@ function FanficReader:addToMainMenu(menu_items)
                                             }))
                                             return true
                                         else
+                                            logger.dbg("Error saving bookmark: " .. request_result.error)
                                             UIManager:show(InfoMessage:new({
                                                 text = "Error: " .. request_result.error,
                                             }))
@@ -260,6 +261,7 @@ function FanficReader:addToMainMenu(menu_items)
                                             }))
                                             return true
                                         else
+                                            logger.dbg("Error deleting bookmark: " .. request_result.error)
                                             UIManager:show(InfoMessage:new({
                                                 text = "Error: " .. request_result.error,
                                             }))
@@ -410,7 +412,6 @@ end
 function FanficReader:onPageUpdate(pageno)
     if self.is_showing then
         if ReaderUI.instance then
-            local logger = require("logger")
             logger.dbg(self.current_fanfic)
             if #self.current_fanfic.chapter_data ~= 0 then
                 local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
