@@ -36,7 +36,7 @@ local FanficBookmarkDialog = InputDialog:extend{
     save_bookmark_callback = nil,
     delete_bookmark_callback = nil,
     close_widget_callback = nil,
-    search_collection_callback = nil,
+    search_collections_callback = nil,
 
 }
 
@@ -295,7 +295,7 @@ function FanficBookmarkDialog:collectionSearchWidget()
                             return
                         end
 
-                        local collections_result = self.search_collection_callback(value)
+                        local collections_result = self.search_collections_callback(value)
 
                         if collections_result then
                             self:collectionSearchSelectionWidget(

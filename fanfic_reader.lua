@@ -270,11 +270,11 @@ function FanficReader:addToMainMenu(menu_items)
 
                                     end,
 
-                                    search_collection_callback = function(collection_name)
-                                        local request_result = AO3DownloaderClient:searchCollection(collection_name)
+                                    search_collections_callback = function(collection_name)
+                                        local request_result = AO3DownloaderClient:searchForCollections(collection_name)
 
                                         if request_result.success then
-                                            return request_result.collection_data
+                                            return request_result.collections
                                         else
                                             logger.dbg("Error searching collections: " .. request_result.error)
                                             UIManager:show(InfoMessage:new({
