@@ -213,6 +213,12 @@ function FanficReader:addToMainMenu(menu_items)
                                     bookmark_private = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.private or false,
                                     bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
                                     save_dialog_callback = function(bookmark_data)
+                                        local NetworkMgr = require("ui/network/manager")
+                                        if not NetworkMgr:isConnected() then
+                                            NetworkMgr:runWhenConnected()
+                                            return
+                                        end
+
                                         local request_result = AO3DownloaderClient:updateBookmark(
                                             self.current_fanfic.id,
                                             self.current_fanfic.bookmarkID,
@@ -248,7 +254,13 @@ function FanficReader:addToMainMenu(menu_items)
                                         end
 
                                     end,
-                                    delete_dialog_callback = function(bookmark_data)
+                                    delete_dialog_callback = function()
+                                        local NetworkMgr = require("ui/network/manager")
+                                        if not NetworkMgr:isConnected() then
+                                            NetworkMgr:runWhenConnected()
+                                            return
+                                        end
+
                                         local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
 
                                         if request_result.success then
@@ -271,6 +283,13 @@ function FanficReader:addToMainMenu(menu_items)
                                     end,
 
                                     search_collections_callback = function(collection_name)
+                                        local NetworkMgr = require("ui/network/manager")
+                                        if not NetworkMgr:isConnected() then
+                                            NetworkMgr:runWhenConnected()
+                                            return
+                                        end
+
+
                                         local request_result = AO3DownloaderClient:searchForCollections(collection_name)
 
                                         if request_result.success then
