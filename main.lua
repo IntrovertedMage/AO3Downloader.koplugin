@@ -562,7 +562,33 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
         NetworkMgr:runWhenConnected()
         return false, {}
     end
-    local series_result = AO3DownloaderClient:getUserSeries(username, pseud)
+
+
+    local current_page = 1
+
+    local series_result = AO3DownloaderClient:getUserSeries(username, pseud, current_page)
+
+    local function getNextPage()
+        current_page = current_page + 1
+        -- temp test for multi page
+        local next_page_result = AO3DownloaderClient:getUserSeries(username, pseud, current_page)
+        if not next_page_result.success then
+            current_page = current_page - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch series from user page: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more series to fetch
+        if #next_page_result.series == 0 then
+            current_page = current_page - 1
+            return {}
+        end
+
+        return  next_page_result.series
+
+    end
     if not series_result.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Failed to fetch series from user page: " .. (series_result.error or "Unknown error"),
@@ -570,7 +596,7 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
         return false
     end
 
-    return true, series_result.series
+    return true, series_result.series, getNextPage
 
 end
 
@@ -580,10 +606,10 @@ function Fanfic:getCollectionsFromUserPage(username)
         NetworkMgr:runWhenConnected()
         return false, {}
     end
-    local works_result = AO3DownloaderClient:getUserCollections(username)
+    local works_result = AO3DownloaderClient:getUserCollections(username, 1)
     if not works_result.success then
         UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch works from user collections page: " .. (works_result.error or "Unknown error"),
+            text = "Error: Failed to fetch collections from user collections page: " .. (works_result.error or "Unknown error"),
         })
         return false
     end
@@ -596,13 +622,13 @@ function Fanfic:getCollectionsFromUserPage(username)
         if not next_page_result.success then
             currentPage = currentPage - 1
             UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch works from user collections page: " .. (next_page_result.error or "Unknown error"),
+                text = "Error: Failed to fetch collections from user collections page: " .. (next_page_result.error or "Unknown error"),
             })
             return {}
         end
 
         -- no more works to fetch
-        if #next_page_result.works == 0 then
+        if #next_page_result.collections == 0 then
             currentPage = currentPage - 1
             return {}
         end

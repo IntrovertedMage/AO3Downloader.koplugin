@@ -206,7 +206,11 @@ function AO3UserBrowser:reloadProfile()
     self:loadPage(author_string, new_menu_table)
 end
 
-function AO3UserBrowser:loadPage(title, menu_table)
+function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
+    local set_page = 1
+    if keeping_current_page and self.AO3UserWindow then
+        set_page = self.AO3UserWindow.show_page
+    end
     if self.AO3UserWindow then
         UIManager:close(self.AO3UserWindow)
         self.Fanfic.menu_stack[self.AO3UserWindow] = nil
@@ -218,7 +222,7 @@ function AO3UserBrowser:loadPage(title, menu_table)
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,
-        show_page = 1,
+        show_page = set_page,
     })
     self.Fanfic.menu_stack[self.AO3UserWindow] = true
     UIManager:show(self.AO3UserWindow)
@@ -235,20 +239,22 @@ function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
 end
 
 function AO3UserBrowser:openUserSeriesList()
-    local success, seriesList = self.Fanfic:getSeriesFromUserPage(self.userData.username, self.userData.pseud)  --
+    local success, seriesList, getNextPage = self.Fanfic:getSeriesFromUserPage(self.userData.username, self.userData.pseud)  --
     if success then
         local series_menu_kv = {}
-        table.insert(series_menu_kv, {
-            "← Back to profile",
-            "",
-            separator = true,
-            callback = function()
-                self:GoUpInMenu()
-            end,
-        })
-        for __, series in pairs(seriesList) do
-            series_menu_kv[#series_menu_kv].separator = true
 
+        local function insert_back_to_profile_item()
+            table.insert(series_menu_kv, 1, {
+                "← Back to profile",
+                "",
+                separator = true,
+                callback = function()
+                    self:GoUpInMenu()
+                end,
+            })
+        end
+
+        local function add_series_to_menu(series)
             table.insert(series_menu_kv, {
                 series.title,
                 "",
@@ -261,7 +267,7 @@ function AO3UserBrowser:openUserSeriesList()
                     seriesWorks.total = series.work_count or 0
                     self.Fanfic:onShowFanficBrowser(seriesWorks, fetchNextPage)
                 end,
-                seperator = true,
+                separator = true,
             })
             table.insert(series_menu_kv,{
                 "Fandoms:"
@@ -291,6 +297,38 @@ function AO3UserBrowser:openUserSeriesList()
             end
         end
 
+        local function refreshSeriesMenu()
+            series_menu_kv = {}
+            insert_back_to_profile_item()
+
+            for __, series in pairs(seriesList) do
+                add_series_to_menu(series)
+                series_menu_kv[#series_menu_kv].separator = true
+            end
+
+            table.insert(series_menu_kv, {
+                "Load more series...",
+                "",
+                callback = function()
+                    local extra_series_list = getNextPage()
+
+                    if #extra_series_list > 0 then
+                        for __, series in pairs(extra_series_list) do
+                            table.insert(seriesList, series)
+                        end
+
+                        refreshSeriesMenu()
+                        self:loadPage("Series", series_menu_kv, true)
+
+
+                    end
+                end,
+            })
+        end
+
+        refreshSeriesMenu()
+
+
         self:GoDownInMenu("Series", series_menu_kv)
     end
 end
@@ -299,17 +337,19 @@ function AO3UserBrowser:openUserCollectionsList()
     local success, collectionsList, getNextPage = self.Fanfic:getCollectionsFromUserPage(self.userData.username)  --
     if success then
         local collections_menu_kv = {}
-        table.insert(collections_menu_kv, {
-            "← Back to profile",
-            "",
-            separator = true,
-            callback = function()
-                self:GoUpInMenu()
-            end,
-        })
-        for __, collection in pairs(collectionsList) do
-            collections_menu_kv[#collections_menu_kv].separator = true
 
+        local function insert_back_to_profile_item()
+            table.insert(collections_menu_kv, 1, {
+                "← Back to profile",
+                "",
+                separator = true,
+                callback = function()
+                    self:GoUpInMenu()
+                end,
+            })
+        end
+
+        local function add_collection_to_menu(collection)
             table.insert(collections_menu_kv, {
                 collection.title,
                 "",
@@ -322,7 +362,7 @@ function AO3UserBrowser:openUserCollectionsList()
                     collectionWorks.total = collection.work_count or 0
                     self.Fanfic:onShowFanficBrowser(collectionWorks, fetchNextPage)
                 end,
-                seperator = true,
+                separator = true,
             })
             table.insert(collections_menu_kv,{
                 "Tags:"
@@ -348,6 +388,34 @@ function AO3UserBrowser:openUserCollectionsList()
             end
         end
 
+        local function refreshCollectionsMenu()
+            collections_menu_kv = {}
+            insert_back_to_profile_item()
+
+            for __, collection in pairs(collectionsList) do
+                add_collection_to_menu(collection)
+                collections_menu_kv[#collections_menu_kv].separator = true
+            end
+
+            table.insert(collections_menu_kv, {
+                "Load more collections...",
+                "",
+                callback = function()
+                    local extra_collections_list = getNextPage()
+
+                    if #extra_collections_list > 0 then
+                        for __, collection in pairs(extra_collections_list) do
+                            table.insert(collectionsList, collection)
+                        end
+
+                        refreshCollectionsMenu()
+                        self:loadPage("Collections", collections_menu_kv, true)
+                    end
+                end,
+            })
+        end
+
+        refreshCollectionsMenu()
         self:GoDownInMenu("Collections", collections_menu_kv)
     end
 end
