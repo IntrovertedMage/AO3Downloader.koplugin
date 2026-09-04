@@ -696,6 +696,14 @@ function FanficMenu:onOpenSettings()
             return false, "Filename template must contain the works ID (%I) atleast once"
         end
 
+        if string.find(template, '[\\/:*?"<>|]') then
+            return false, "Filename template contains characters that are not allowed in filenames" .. " (\\ / : * ? \" < > |)"
+        end
+
+        if string.find(template, "[%.%s]+$") then
+            return false, "Filename template cannot end with a dot or whitespace"
+        end
+
         return true
     end
 
