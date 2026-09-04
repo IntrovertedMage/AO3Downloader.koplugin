@@ -129,7 +129,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                         end
 
                         table.insert(submenu_items, {
-                            text = T("%1 (%2) %3 by %4",prefix, fanfic.chapters, fanfic.title, fanfic.author),
+                            text = T("%1 (%2) %3 by %4",prefix, fanfic.chapters, fanfic.title, fanfic.author or "anonymous"),
                             id = fanfic.id,
                             callback = function()
                                 -- Show options for the fanfic
