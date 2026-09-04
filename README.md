@@ -1,13 +1,32 @@
 An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy.
 The plugins menu is found under the search tab in the top menu on the second page only while the filemanager is open.
 
-## Features
+# Features
 - Browse and download from AO3 by either a singular tag or a detailed filter
 - Download works by their id
 - Update and delete downloaded works from the download menu
 - Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
-- Search for and open users profiles and download the users works, series, bookmarks and gifted works.
+- Search for and open users profiles and download the users works, series, collections bookmarks and gifted works.
   - Profiles can also be open from the work search results menu by tapping the author category
+
+# Install
+1. Download the latest AO3Downloader-(version).zip file from the [most recent release](https://github.com/IntrovertedMage/AO3Downloader.koplugin/releases/latest)
+2. Unzip the folder on your device and copy and paste the AO3Downloader.koplugin folder inside to the koreader plugins folder for your device.
+| Device 	Plugins folder
+   | Device | Plugins folder |
+   |--------|----------------|
+   | Kindle | `/mnt/us/koreader/plugins/` |
+   | Kobo | `/mnt/onboard/.adds/koreader/plugins/` |
+   | Android | `<koreader-dir>/plugins/` |
+3. Restart KOReader.
+4. Open KOReader's menu and find the plugins menu option, by default the plugins menu option will be under search (the magnifying glass).
+5. Tap the plugins menu option (AO3 Downloader) to open the plugins main menu.
+
+- To update the plugin simply delete the old AO3Downloader.koplugin folder from the koreader plugins folder and then copy and paste and new version folder to replace it.
+
+
+This plugin can also be installed and updated using the [storefront.koplugin](https://github.com/ultimatejimmy/storefront.koplugin) plugin.
+
 
 ## Features I want to work on
 - ~~Support using a AO3 account~~ - done 
