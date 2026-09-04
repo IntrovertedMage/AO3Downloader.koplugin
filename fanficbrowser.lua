@@ -236,7 +236,7 @@ function FanficBrowser:showDownloadDialog(fanfic)
 
     local confirmDialog
     confirmDialog = ButtonDialog:new({
-        title = T("Would you like to download the work: %1 by %2?", fanfic.title, fanfic.author),
+        title = T("Would you like to download the work: %1 by %2?", fanfic.title, fanfic.author or "Anonymous"),
         buttons = {
             {
                 {
