@@ -15,6 +15,7 @@ local Config = require("fanfic_config")
 local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
 local AO3DownloaderClient = require("AO3_downloader_client")
+local util = require("util")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -86,13 +87,16 @@ end
 function Fanfic.GenerateFileName(metadata)
     local template = Config:readSetting("filename_template", "%I")
     -- local template = "%T--%A--(%I)"
+    local function sanitize(value)
+        return util.getSafeFilename(tostring(value or ""))
+    end
 
     local replace = {
-        ["%I"] = metadata.id,
-        ["%T"] = metadata.title:gsub("%s+", "_"),
-        ["%A"] = metadata.author:gsub("%s+", "_"),
+        ["%I"] = sanitize(metadata.id),
+        ["%T"] = sanitize(metadata.title):gsub("%s+", "_"),
+        ["%A"] = sanitize(metadata.author):gsub("%s+", "_"),
     }
-    return template:gsub("(%%%a)", replace)
+    return sanitize((template:gsub("(%%%a)", replace)))
 end
 
 function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage)
