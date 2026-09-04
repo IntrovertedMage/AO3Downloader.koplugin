@@ -570,12 +570,11 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
 
     local function getNextPage()
         current_page = current_page + 1
-        -- temp test for multi page
         local next_page_result = AO3DownloaderClient:getUserSeries(username, pseud, current_page)
         if not next_page_result.success then
             current_page = current_page - 1
             UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch series from user page: " .. (next_page_result.error or "Unknown error"),
+                text = "Error: Failed to fetch series from users page: " .. (next_page_result.error or "Unknown error"),
             })
             return {}
         end
@@ -591,7 +590,7 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
     end
     if not series_result.success then
         UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch series from user page: " .. (series_result.error or "Unknown error"),
+            text = "Error: Failed to fetch series from users page: " .. (series_result.error or "Unknown error"),
         })
         return false
     end
@@ -606,15 +605,17 @@ function Fanfic:getCollectionsFromUserPage(username)
         NetworkMgr:runWhenConnected()
         return false, {}
     end
-    local works_result = AO3DownloaderClient:getUserCollections(username, 1)
+
+    local currentPage = 1
+
+    local works_result = AO3DownloaderClient:getUserCollections(username, currentPage)
     if not works_result.success then
         UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch collections from user collections page: " .. (works_result.error or "Unknown error"),
+            text = "Error: Failed to fetch collections from users collections page: " .. (works_result.error or "Unknown error"),
         })
         return false
     end
 
-    local currentPage = 1
 
     local function getNextPage()
         currentPage = currentPage + 1
@@ -622,7 +623,7 @@ function Fanfic:getCollectionsFromUserPage(username)
         if not next_page_result.success then
             currentPage = currentPage - 1
             UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch collections from user collections page: " .. (next_page_result.error or "Unknown error"),
+                text = "Error: Failed to fetch collections from users collections page: " .. (next_page_result.error or "Unknown error"),
             })
             return {}
         end
