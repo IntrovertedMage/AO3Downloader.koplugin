@@ -492,6 +492,46 @@ function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
 
 end
 
+function Fanfic:getMarkedForLater(username)
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        NetworkMgr:runWhenConnected()
+        return false, {}
+    end
+    local works_result = AO3DownloaderClient:getMarkedForLaterWorks(username)
+    if not works_result.success then
+        UIManager:show(InfoMessage:new{
+            text = "Error: Failed to fetch marked for later works: " .. (works_result.error or "Unknown error"),
+        })
+        return false
+    end
+
+    local currentPage = 1
+
+    local function getNextPage()
+        currentPage = currentPage + 1
+        local next_page_result = AO3DownloaderClient:getMarkedForLaterWorks(username, currentPage)
+        if not next_page_result.success then
+            currentPage = currentPage - 1
+            UIManager:show(InfoMessage:new{
+                text = "Error: Failed to fetch marked for later works: " .. (next_page_result.error or "Unknown error"),
+            })
+            return {}
+        end
+
+        -- no more works to fetch
+        if #next_page_result.works == 0 then
+            currentPage = currentPage - 1
+            return {}
+        end
+
+        return  next_page_result.works
+    end
+
+    return true, works_result.works, getNextPage
+
+end
+
 function Fanfic:getPseudsForUser(username)
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isConnected() then

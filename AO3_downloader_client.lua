@@ -654,6 +654,41 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
 end
 
+function AO3DownloaderClient:getMarkedForLaterWorks(username, page_no)
+    page_no = page_no or 1
+
+    logger.dbg("AO3Downloader.koplugin: Fetching marked for later works for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+
+    local url = T("%1/users/%2/readings?show=to-read&page=%3", getAO3URL(), username, page_no)
+
+    local response_body = {}
+    local request = {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response_body),
+    }
+
+    local request_result = HTTPQueryHandler:performHTTPRequest(request)
+
+    if not request_result.success then
+        return {
+            success = false,
+            error = T("Failed to fetch marked for later works. Status: %1", request_result.status or "unknown error"),
+        }
+    end
+
+    local html_body = table.concat(response_body)
+
+    local root = htmlparser.parse(html_body)
+
+    local works = AO3WebParser:parseWorkSearchResults(root)
+
+    return {
+        success = true,
+        works = works,
+    }
+end
+
 function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     page_no = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))

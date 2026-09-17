@@ -137,6 +137,22 @@ function FanficMenu:refreshAccountManagementMenu()
             end,
         })
         table.insert(menu_items, {
+            text = _("View marked for later"),
+            callback = function()
+                UIManager:scheduleIn(1, function()
+                    local success, ficResults, fetchNextPage = self.fanfic:getMarkedForLater(self.username)
+                    if not success then
+                        return
+                    end
+                    self.fanfic:onShowFanficBrowser(ficResults, fetchNextPage)
+                end)
+                UIManager:show(InfoMessage:new({
+                    text = _("Downloading works data may take some time…"),
+                    timeout = 1,
+                }))
+            end,
+        })
+        table.insert(menu_items, {
             text = "Log out",
             callback = function()
                 self.logged_in = not self.fanfic:logoutOfAO3()

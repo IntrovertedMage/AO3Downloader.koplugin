@@ -8,6 +8,7 @@ The plugins menu is found under the search tab in the top menu on the second pag
 - Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
 - Search for and open users profiles and download the users works, series, bookmarks and gifted works.
   - Profiles can also be open from the work search results menu by tapping the author category
+- View the works marked for later ("to-read" list) on your logged in AO3 account
 
 ## Features I want to work on
 - ~~Support using a AO3 account~~ - done 
