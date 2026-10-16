@@ -326,9 +326,23 @@ function AO3DownloaderClient:GetSessionStatus()
     end
 
     local body_content = table.concat(response_body)
+    local root = htmlparser.parse(body_content)
 
-    if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
-        local username = body_content:match('<a href="/users/([%w_]+)"')
+    local is_logged_in = #root:select('body.logged-in') > 0
+
+    if is_logged_in then
+        local usernames_select = root:select('a[href^="/users/"]')
+
+        if  #usernames_select == 0 then
+            return {
+                session_exists = true,
+                success = false,
+                error = T("Failed to parse username from AO3 homepage."),
+            }
+        end
+
+        local username = usernames_select[1]:getcontent()
+
         return {
             session_exists = true,
             logged_in = true,
