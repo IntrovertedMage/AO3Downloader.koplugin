@@ -332,6 +332,8 @@ function AO3DownloaderClient:GetSessionStatus()
 
     if is_logged_in then
         local usernames_select = root:select('a[href^="/users/"]')
+
+        -- Filter out any links that do not match the expected "/users/username" pattern
         for index = #usernames_select, 1, -1 do
             local href = usernames_select[index].attributes and usernames_select[index].attributes.href
             if not href or not href:match('^/users/[^/]+$') then
