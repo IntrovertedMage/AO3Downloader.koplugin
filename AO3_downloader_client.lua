@@ -348,7 +348,7 @@ function AO3DownloaderClient:GetSessionStatus()
         end
 
 
-        -- parse username
+        -- parse username from "/users/username" href
         local username = usernames_select[1].attributes.href:match("/users/([^/]+)")
 
         return {
