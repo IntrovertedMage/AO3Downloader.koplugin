@@ -2161,7 +2161,7 @@ end
 function AO3WebParser:parseWorkPage(root)
     -- Extract metadata
     local titleElement = root:select(".title")[1]
-    local authorElements = root:select("a[rel='author']")
+    local authorElements = root:select("div#workskin > div.preface.group a[rel='author']")
     local giftElements = root:select(".associations > li > a[href$='/gifts']")
     local summaryElement = root:select(".summary > blockquote")[1]
     local tagsElement = root:select(".freeform > ul")[1]
