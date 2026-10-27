@@ -333,6 +333,14 @@ function AO3DownloaderClient:GetSessionStatus()
     if is_logged_in then
         local usernames_select = root:select('a[href^="/users/"]')
 
+        -- Filter out any links that do not match the expected "/users/username" pattern
+        for index = #usernames_select, 1, -1 do
+            local href = usernames_select[index].attributes and usernames_select[index].attributes.href
+            if not href or not href:match('^/users/[^/]+$') then
+                table.remove(usernames_select, index)
+            end
+        end
+
         if  #usernames_select == 0 then
             return {
                 session_exists = true,
@@ -341,7 +349,9 @@ function AO3DownloaderClient:GetSessionStatus()
             }
         end
 
-        local username = usernames_select[1]:getcontent()
+
+        -- parse username from "/users/username" href
+        local username = usernames_select[1].attributes.href:match("/users/([^/]+)")
 
         return {
             session_exists = true,
@@ -723,9 +733,9 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
     end
 
     local username = login_status.username
-    
+
     local url
-    
+
     url = T("%1/users/%2/readings", getAO3URL(), username)
 
     page_no = page_no or 1
@@ -1906,7 +1916,7 @@ function AO3WebParser:parseUserCollectionsPage(root)
             end
 
             local typeElement = element:select("p.type")[1]
-            local type = typeElement:getcontent():gsub("^%s*(.-)%s*$", "%1") 
+            local type = typeElement:getcontent():gsub("^%s*(.-)%s*$", "%1")
 
             local summaryElement = element:select(".summary")[1]
             local summary = (type and (type.." ") or "") .. (summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
