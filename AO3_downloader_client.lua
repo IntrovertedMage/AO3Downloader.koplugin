@@ -22,6 +22,7 @@ local HTTPQueryHandler = {}
 local encodeHelper = {}
 
 
+-- encodeHelper
 function encodeHelper:urlEncode(str)
     if str then
         str = str:gsub("([^%w%-%.%_%~])", function(c)
@@ -92,6 +93,8 @@ function encodeHelper:generateParametersStringForm(params)
     return table.concat(form_parts, "&")
 end
 
+
+-- AO3DownloaderClient
 function AO3DownloaderClient:requestAO3Token()
     logger.dbg("AO3Downloader.koplugin: Requesting AO3 token...")
     local tokenRequestURL = getAO3URL() .. "/token_dispenser.json"
@@ -446,12 +449,91 @@ function AO3DownloaderClient:downloadEpub(download_link, filepath)
     }
 end
 
-function AO3DownloaderClient:searchByParameters(parameters, page_no)
+function AO3DownloaderClient:searchByFilter(filter, page_no)
     local page = page_no or 1 -- Default to the first page if no page is specified
     logger.dbg("AO3Downloader.koplugin: Executing work search by parameters. Page no: " .. tostring(page_no))
-    local query = {}
+
+    local parameters = {}
+    if filter.type == "works" then
+        parameters = {
+            ["work_search[complete]"] = filter.completion_status or nil,
+            ["work_search[crossover]"] = filter.crossovers or nil,
+            ["work_search[single_chapter]"] = filter.single_chapter or nil,
+            ["work_search[word_count]"] = filter.word_count or nil,
+            ["work_search[language_id]"] = filter.language_id or nil,
+            ["work_search[date_from]"] = filter.date_from or nil,
+            ["work_search[date_to]"] = filter.date_to or nil,
+            ["work_search[fandom_names]"] = filter.fandom_names and table.concat(filter.fandom_names, ",") or nil,
+            ["work_search[rating_ids]"] = filter.rating or nil,
+            ["work_search[archive_warning_ids][]"] = filter.warnings or nil,
+            ["exclude_work_search[archive_warning_ids][]"] = filter.exclude_warnings or nil,
+            ["work_search[category_ids][]"] = filter.categories or nil,
+            ["exclude_work_search[category_ids][]"] = filter.exclude_categories or nil,
+            ["work_search[character_names]"] = filter.characters and table.concat(filter.characters, ",") or nil,
+            ["work_search[relationship_names]"] = filter.relationships and table.concat(filter.relationships, ",") or nil,
+            ["work_search[freeform_names]"] = filter.additional_tags and table.concat(filter.additional_tags, ",") or nil,
+            ["work_search[hits]"] = filter.hits or nil,
+            ["work_search[kudos_count]"] = filter.kudos or nil,
+            ["work_search[comments_count]"] = filter.comments or nil,
+            ["work_search[bookmarks_count]"] = filter.bookmarks or nil,
+            ["work_search[sort_column]"] = filter.sort_by or nil,
+            ["work_search[sort_direction]"] = filter.sort_direction or nil,
+
+            ["work_search[excluded_tag_names]"] = table.concat({
+                filter.exclude_fandom_names and table.concat(filter.exclude_fandom_names, ",") or "",
+                filter.exclude_characters and table.concat(filter.exclude_characters, ",") or "",
+                filter.exclude_relationships and table.concat(filter.exclude_relationships, ",") or "",
+                filter.exclude_additional_tags and table.concat(filter.exclude_additional_tags, ",") or "",
+            }, ","),
+        }
+    elseif filter.type == "bookmarks" then
+        parameters = {
+            ["bookmark_search[complete]"] = filter.completion_status or nil,
+            ["bookmark_search[crossover]"] = filter.crossovers or nil,
+            ["bookmark_search[single_chapter]"] = filter.single_chapter or nil,
+            ["bookmark_search[word_count]"] = filter.word_count or nil,
+            ["bookmark_search[language_id]"] = filter.language_id or nil,
+            ["bookmark_search[date_from]"] = filter.date_from or nil,
+            ["bookmark_search[date_to]"] = filter.date_to or nil,
+            ["bookmark_search[fandom_names]"] = filter.fandom_names and table.concat(filter.fandom_names, ",") or nil,
+            ["bookmark_search[rating_ids]"] = filter.rating or nil,
+            ["bookmark_search[archive_warning_ids][]"] = filter.warnings or nil,
+            ["exclude_bookmark_search[archive_warning_ids][]"] = filter.exclude_warnings or nil,
+            ["bookmark_search[category_ids][]"] = filter.categories or nil,
+            ["exclude_bookmark_search[category_ids][]"] = filter.exclude_categories or nil,
+            ["bookmark_search[character_names]"] = filter.characters and table.concat(filter.characters, ",") or nil,
+            ["bookmark_search[relationship_names]"] = filter.relationships and table.concat(filter.relationships, ",") or nil,
+            ["bookmark_search[freeform_names]"] = filter.additional_tags and table.concat(filter.additional_tags, ",") or nil,
+            ["bookmark_search[hits]"] = filter.hits or nil,
+            ["bookmark_search[kudos_count]"] = filter.kudos or nil,
+            ["bookmark_search[comments_count]"] = filter.comments or nil,
+            ["bookmark_search[bookmarks_count]"] = filter.bookmarks or nil,
+            ["bookmark_search[sort_column]"] = filter.sort_by or nil,
+            ["bookmark_search[sort_direction]"] = filter.sort_direction or nil,
+
+            ["bookmark_search[excluded_tag_names]"] = table.concat({
+                filter.exclude_fandom_names and table.concat(filter.exclude_fandom_names, ",") or "",
+                filter.exclude_characters and table.concat(filter.exclude_characters, ",") or "",
+                filter.exclude_relationships and table.concat(filter.exclude_relationships, ",") or "",
+                filter.exclude_additional_tags and table.concat(filter.exclude_additional_tags, ",") or "",
+            }, ","),
+            ["bookmark_search[with_notes]"] = filter.with_notes or nil,
+            ["bookmark_search[rec]"] = filter.rec or nil,
+        }
+    else
+        return false, {error = "Invalid filter search type"}
+    end
+    if filter.main_tag then
+        parameters["tag_id"] = filter.main_tag or nil
+    elseif filter.user_id then
+        parameters["user_id"] = filter.user_id
+        if filter.pseud_id then
+            parameters["user_pseud"] = filter.pseud_id
+        end
+    end
 
     -- Build the query string from the parameters
+    local query = {}
     for key, value in pairs(parameters) do
         if value == "" then
             table.insert(query, string.format("%s=", encodeHelper:urlEncode(key))) -- Include empty parameters
@@ -468,7 +550,7 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     local queryString = table.concat(query, "&")
 
     -- Construct the full URL
-    local url = string.format("%s/works?commit=Sort+and+Filter&%s", getAO3URL(), queryString)
+    local url = string.format("%s/%s?commit=Sort+and+Filter&%s", getAO3URL(), filter.type, queryString)
 
     local response_body = {}
 
@@ -481,8 +563,7 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     local response_result = HTTPQueryHandler:performHTTPRequest(request)
 
     if not response_result.success then
-        return {
-            success = false,
+        return false, {
             error = T("%1/works?commit=Sort+and+Filter&%2", getAO3URL(), queryString)
         }
     end
@@ -490,54 +571,19 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     local html_body = table.concat(response_body)
 
     local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
 
-    return {
-        success = true,
-        works = works,
-    }
-end
-
-function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
-    local page = page_no or 1
-    logger.dbg("AO3Downloader.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
-    local sort_column = sort_by or "revised_at"
-
-    local encoded_tag_name = tag_name
-        :gsub("/", "*s*")
-        :gsub("&", "*a*")
-        :gsub("%.", "*d*")
-
-    encoded_tag_name = encodeHelper:urlEncode(encoded_tag_name)
-
-    local AO3URL = Config:readSetting("AO3_domain")
-    local url = T("%1/tags/%2/works?page=%3&work_search[sort_column]=%4", AO3URL, encoded_tag_name, page, sort_column)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Search request failed. Status: %1", request_result.status or "unknown error"),
-        }
+    local searchResult = {}
+    if filter.type == "bookmarks" then
+        searchResult = AO3WebParser:parseUserBookmarks(root)
+    elseif filter.type == "works" then
+        searchResult = AO3WebParser:parseWorkSearchResults(root)
     end
 
-    local html_body = table.concat(response_body)
+    searchResult.filter = filter
+    searchResult.parameters = parameters
+    searchResult.count_suffix = "Results"
 
-    local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
-
-    return {
-        success = true,
-        result_works = works,
-    }
+    return true, searchResult
 end
 
 function AO3DownloaderClient:searchForTags(search_query, tag_type)
@@ -606,8 +652,7 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
     if not request_result.success then
-        return {
-            success = false,
+        return false, {
             error = T("Failed to fetch series works. Status: %1", request_result.status or "unknown error"),
         }
     end
@@ -616,12 +661,12 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local searchResult = AO3WebParser:parseSeries(root, page_no==1)
 
-    return {
-        success = true,
-        works = works,
-    }
+    searchResult.title = "AO3 Series"
+    searchResult.count_suffix = "Works"
+
+    return true, searchResult
 end
 
 function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
@@ -639,8 +684,7 @@ function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
     if not request_result.success then
-        return {
-            success = false,
+        return false, {
             error = T("Failed to fetch collection works. Status: %1", request_result.status or "unknown error"),
         }
     end
@@ -649,26 +693,38 @@ function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local searchResult = AO3WebParser:parseWorkSearchResults(root)
 
-    return {
-        success = true,
-        works = works,
-    }
+    if page_no == 1 then
+        local meta_response_body = {}
+        local meta_request = {
+            url = T("%1/collections/%2/profile", getAO3URL(), collection_id),
+            method = "GET",
+            sink = ltn12.sink.table(meta_response_body),
+        }
+        local meta_request_result = HTTPQueryHandler:performHTTPRequest(meta_request)
+        if not meta_request_result.success then
+            return false, {
+                error = T("Failed to fetch collection metadata. Status: %1", meta_request_result.status or "unknown error"),
+            }
+        end
+        local meta_root = htmlparser.parse(table.concat(meta_response_body))
+        searchResult.cover_page = AO3WebParser:parseCollectionMeta(meta_root)
+    end
+
+    searchResult.title = "AO3 Collection"
+    searchResult.count_suffix = "Works"
+
+    return true, searchResult
 end
 
-function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
-    local url
-    if catagory == "gifts" then
-        url = T("%1/users/%2/gifts", getAO3URL(), username)
-    else
-        url = T("%1/users/%2/pseuds/%3/%4", getAO3URL(), username, pseud, catagory)
-    end
+function AO3DownloaderClient:getWorksFromUserGifts(username, page_no)
+    local url = T("%1/users/%2/gifts", getAO3URL(), username)
 
     page_no = page_no or 1
 
-    logger.dbg("AO3Downloader.koplugin: Fetching works from user page. Username: " .. tostring(username) .. ", category: " .. tostring(catagory) .. (fandom_id and (", fandom ID: " .. tostring(fandom_id)) or "") .. ", page no: " .. tostring(page_no))
-    local parameters = {["fandom_id"] = fandom_id, ["page"] = page_no}
+    logger.dbg("AO3Downloader.koplugin: Fetching works from user gifts page. Username: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    local parameters = {["page"] = page_no}
 
     local parameter_string = table.concat(
         (function()
@@ -685,7 +741,6 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
     url = url .. "?" .. parameter_string
 
-
     local response_body = {}
     local request = {
         url = url,
@@ -696,8 +751,7 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
     if not request_result.success then
-        return {
-            success = false,
+        return false, {
             error = T("Failed to fetch user works. Status: %1", request_result.status or "unknown error"),
         }
     end
@@ -706,18 +760,17 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
     local root = htmlparser.parse(html_body)
 
-    local works = nil
+    local searchResult = AO3WebParser:parseWorkSearchResults(root)
 
-    if catagory == "bookmarks" then
-        works = AO3WebParser:parseUserBookmarks(root)
-    else
-         works = AO3WebParser:parseWorkSearchResults(root)
+    local total_gifts_element = root:select("ul.actions > li > span.current")[1]
+    if total_gifts_element then
+        searchResult.count = tonumber(total_gifts_element:getcontent():match("Gifts%s*%((%d+)%)"))
     end
+        
+    searchResult.title = "AO3 Author Gifts"
+    searchResult.count_suffix = "Works"
 
-    return {
-        success = true,
-        works = works,
-    }
+    return true, searchResult
 
 end
 
@@ -769,8 +822,7 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
     if not request_result.success then
-        return {
-            success = false,
+        return false, {
             error = T("Failed to fetch account history. Status: %1", request_result.status or "unknown error"),
         }
     end
@@ -779,14 +831,11 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
 
     local root = htmlparser.parse(html_body)
 
-    local works = nil
+    local searchResult = AO3WebParser:parseAccountHistory(root)
 
-    works = AO3WebParser:parseAccountHistory(root)
+    searchResult.title = marked_for_later and "AO3 Account Marked For Later" or "AO3 Account History"
 
-    return {
-        success = true,
-        works = works,
-    }
+    return true, searchResult
 
 end
 
@@ -1693,7 +1742,9 @@ end
 
 -- AO3WebParser
 function AO3WebParser:parseWorkSearchResults(root)
-    local works = {}
+    local searchResult = {
+        works = {}
+    }
     local elements = root:select("li.work")
 
     local count = 1
@@ -1703,12 +1754,11 @@ function AO3WebParser:parseWorkSearchResults(root)
         local resultsText = resultsCountElement:getcontent()
         local totalWorks = resultsText:match("^%s*([%d,]+) Found")
         if totalWorks then
-            totalWorks = tonumber(totalWorks:gsub(",", ""), 10)
-            works["total"] = totalWorks
+            searchResult.count = tonumber(totalWorks:gsub(",", ""), 10)
         end
     end
 
-    if not works["total"] then
+    if not searchResult.count then
         local resultsCountElement = root:select("#main > h2")[1]
         if resultsCountElement then
             local resultsText = resultsCountElement:getcontent()
@@ -1717,8 +1767,7 @@ function AO3WebParser:parseWorkSearchResults(root)
                 totalWorks = resultsText:match("^%s*([%d,]+)%s*Works")
             end
             if totalWorks then
-                totalWorks = totalWorks:gsub(",", "")
-                works["total"] = tonumber(totalWorks)
+                searchResult.count = tonumber(totalWorks:gsub(",", ""),10)
             end
         end
     end
@@ -1727,16 +1776,165 @@ function AO3WebParser:parseWorkSearchResults(root)
     for _, element in ipairs(elements) do
         local work = self:parseWorkElement(element)
         if work then
-            table.insert(works, count, work)
+            table.insert(searchResult.works, count, work)
             count = count + 1
         end
     end
 
-    return works
+    return searchResult
+end
+
+function AO3WebParser:parseSeries(root, header)
+    local searchResult = {
+        works = {}
+    }
+
+    local worksCountElement = root:select("dd.works")[1]
+    if worksCountElement then
+        local worksCount = worksCountElement:getcontent()
+        if worksCount then
+            searchResult.count = tonumber(worksCount:gsub(",", ""), 10)
+        end
+    end
+
+    if header then
+
+        local series_meta = {}
+
+        -- Authors
+        local author_table = {}
+        for _, author in pairs(root:select('dl.series.meta.group dd a[rel="author"]')) do
+            table.insert(author_table, author:getcontent())
+        end
+
+        series_meta.author = #author_table > 0 and table.concat(author_table, ", ") or ""
+
+        local dts = root:select('dl.series.meta.group dt')
+        local dds = root:select('dl.series.meta.group dd')
+        for i, dt in pairs(dts) do
+            local content = dt:getcontent()
+
+            local value = dds[i]:getcontent()
+
+            if content == "Series Begun:" then
+                series_meta.published = value
+            end
+                
+            if content == "Series Updated:" then
+                series_meta.updated = value
+            end
+
+            if content == "Description:" then
+                series_meta.summary = "Summary: \n\n" .. encodeHelper:parseFromHTML(value)
+            end
+
+            if content == "Notes:" then
+                series_meta.summary = (series_meta.summary and series_meta.summary or "") .. "\n\nNotes: \n\n" .. encodeHelper:parseFromHTML(value)
+            end
+
+            if content == "Complete:" then
+                series_meta.iswip = "Complete: " .. (value and value or "?")
+            end 
+                
+        end
+        
+        local titleElement = root:select("h2.heading")[1]
+        series_meta.title = encodeHelper:parseFromHTML(titleElement:getcontent())
+        local restrictedElement = root:select("h2.heading > img[title='Restricted']")[1]
+        series_meta.is_restricted = restrictedElement and true or false
+        local series_element = root:select("dl.series")[1]
+        local wordsElement = series_element:select("dd.words")[1]
+        series_meta.wordcount = wordsElement and encodeHelper:parseToCodepoints(wordsElement:getcontent()) or "0"
+        local bookmarksElement = series_element:select("dd.bookmarks")[1]
+        series_meta.bookmarks = bookmarksElement and encodeHelper:parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", "")) or "0"
+        series_meta.id = nil
+        series_meta.relationships = {}
+        series_meta.characters = {}
+        series_meta.warnings = {}
+        series_meta.fandoms = {}
+        series_meta.series = {}
+
+        searchResult.cover_page = series_meta
+    end
+
+    local count = 1
+    local elements = root:select("li.work")
+    for _, element in ipairs(elements) do
+        local work = self:parseWorkElement(element)
+        if work then
+            table.insert(searchResult.works, count, work)
+            count = count + 1
+        end
+    end
+
+    return searchResult
+end
+
+function AO3WebParser:parseCollectionMeta(root)
+
+    local collection_meta = {}
+
+    local titleElement = root:select("h3.heading span.title")[1]
+    collection_meta.title = titleElement:getcontent():match("^%s*(.-)%s*$")
+    -- collection_meta.id = root:select_one("h3.heading span.name"):getContent():match("%((.-)%)")
+    collection_meta.published = root:select("dl.meta dd")[1]:getcontent():match("^%s*(.-)%s*$")
+
+    local author_table = {}
+    for _, li in ipairs(root:select("dd.maintainers li")) do
+        table.insert(author_table, li:select("a")[1]:getcontent():match("^%s*(.-)%s*$"))
+    end
+    collection_meta.author = #author_table > 0 and table.concat(author_table, ", ") or ""
+
+    local description_parts = {}
+    for _, p in ipairs(root:select("blockquote.userstuff p")) do
+        table.insert(description_parts, p:getcontent():match("^%s*(.-)%s*$"))
+    end
+    collection_meta.summary = table.concat(description_parts, "\n")
+
+    collection_meta.iswip = root:select("p.type")[1]:getcontent():match("^%s*(.-)%s*$")
+
+    local tags = {}
+    for _, a in ipairs(root:select("ul.tags li a.tag")) do
+        table.insert(tags, a:getcontent():match("^%s*(.-)%s*$"))
+    end
+    collection_meta.tags = #tags > 0 and table.concat(tags, ", ") or nil
+
+    -- collection_meta.subcollections = root:select_one("a[href$='/collections']"):getContent():match("%((%d+)%)")
+    -- collection_meta.works = root:select_one("a[href$='/works']"):getContent():match("%((%d+)%)")
+    collection_meta.bookmarks = root:select("a[href$='/bookmarks']")[1]:getcontent():match("%((%d+)%)")
+    -- collection_meta.fandoms = root:select_one("a[href$='/fandoms']"):getContent():match("%((%d+)%)")
+    
+    collection_meta.is_restricted = false
+
+    -- series_meta.wordcount = wordsElement and encodeHelper:parseToCodepoints(wordsElement:getcontent()) or "0"
+
+    collection_meta.id = nil
+    collection_meta.relationships = {}
+    collection_meta.characters = {}
+    collection_meta.warnings = {}
+    collection_meta.fandoms = {}
+    collection_meta.series = {}
+
+    return collection_meta
 end
 
 function AO3WebParser:parseUserBookmarks(root)
-    local bookmarks = {}
+    local searchResult = {
+        works = {}
+    }
+
+    local resultsCountElement = root:select("#main > h2")[1]
+    if resultsCountElement then
+        local resultsText = resultsCountElement:getcontent()
+        local totalWorks = resultsText:match("of%s*([%d,]+)%s*Bookmarks")
+        if not totalWorks then
+            totalWorks = resultsText:match("^%s*([%d,]+)%s*Bookmarks")
+        end
+        if totalWorks then
+            searchResult.count = tonumber(totalWorks:gsub(",", ""),10)
+        end
+    end
+
     local elements = root:select("li.bookmark")
 
     local count = 1
@@ -1749,19 +1947,19 @@ function AO3WebParser:parseUserBookmarks(root)
             work.title = "Deleted Work"
             work.id = nil
             work.is_deleted = true
-            table.insert(bookmarks, count, work)
+            table.insert(searchResult.works, count, work)
             count = count + 1
 
         else
             local work = self:parseWorkElement(element)
             if work then
-                table.insert(bookmarks, count, work)
+                table.insert(searchResult.works, count, work)
                 count = count + 1
             end
         end
     end
 
-    return bookmarks
+    return searchResult
 
 end
 
@@ -1948,7 +2146,9 @@ function AO3WebParser:parseUserCollectionsPage(root)
 end
 
 function AO3WebParser:parseAccountHistory(root)
-    local works = {}
+    local searchResult = {
+        works = {}
+    } 
     local elements = root:select("li.work")
 
     local count = 1
@@ -1956,14 +2156,12 @@ function AO3WebParser:parseAccountHistory(root)
     for _, element in ipairs(elements) do
         local work = self:parseWorkElement(element)
         if work then
-            table.insert(works, count, work)
+            table.insert(searchResult.works, count, work)
             count = count + 1
         end
     end
 
-    works["total"] = -1
-
-    return works
+    return searchResult
 end
 
 function AO3WebParser:parseWorkElement(element)
@@ -1977,6 +2175,7 @@ function AO3WebParser:parseWorkElement(element)
     local charactersElement = element:select(".tags > .characters")
     local warningsElement = element:select(".tags > .warnings")
     local fandomsElement = element:select(".fandoms")[1]
+    local seriesElement = element:select("ul.series")[1]
     local dateElement = element:select(".datetime")[1]
     local languageElement = element:select("dd.language")[1]
     local wordsElement = element:select("dd.words")[1]
@@ -2058,9 +2257,24 @@ function AO3WebParser:parseWorkElement(element)
             end
         end
 
+        local series = {}
+        if seriesElement then
+            for _, position in ipairs(seriesElement:select("li")) do
+                local strong = position:select("strong")[1]
+                local link = position:select("a")[1]
+
+                local part = strong and strong:getcontent()
+                local title = link and link:getcontent()
+                local series_id = link and link.attributes.href:match("/series/(%d+)")
+                if part and title and series_id then
+                    table.insert(series, { part = part, title = title, id = series_id })
+                end
+            end
+        end
+
         -- Extract additional metadata
         local date = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or "N/A"
-        local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent()) or "N/A"
+        local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent():gsub("%s+", "")) or "N/A"
         local words = wordsElement and encodeHelper:parseToCodepoints(wordsElement:getcontent()) or "N/A"
         local chapters = chaptersElement and encodeHelper:parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
             or "N/A"
@@ -2114,9 +2328,10 @@ function AO3WebParser:parseWorkElement(element)
             characters = characters or {},
             warnings = warnings or {},
             fandoms = fandoms or {},
-            date = date,
+            series = series or {},
+            updated = date,
             language = language,
-            words = words,
+            wordcount = words,
             chapters = chapters,
             hits = hits,
             comments = comments,
@@ -2180,6 +2395,7 @@ function AO3WebParser:parseWorkPage(root)
 
     -- Extract additional metadata
     local fandomElement = root:select(".fandom > ul")[1]
+    local seriesElement = root:select("dd.series")[1]
     local publishedElement = root:select("dd.published")[1]
     local updatedElement = root:select("dd.status")[1]
     local chaptersElement = root:select("dd.chapters")[1]
@@ -2290,11 +2506,25 @@ function AO3WebParser:parseWorkPage(root)
         end
     end
 
+    local series = {}
+    if seriesElement then
+        for _, position in ipairs(seriesElement:select("span.series > span.position")) do
+            local content = position:getcontent()
+
+            local part = content:match("^Part%s+(%d+)%s+of")
+            local title = position:select("a")[1]:getcontent()
+            local series_id = content:match("/series/(%d+)")
+            if part and title and series_id then
+                table.insert(series, {part = part, title = title, id = series_id})
+            end
+        end
+    end
+
     local publishedDate = publishedElement and encodeHelper:parseToCodepoints(publishedElement:getcontent()) or "Unknown date"
     local updatedDate = updatedElement and encodeHelper:parseToCodepoints(updatedElement:getcontent()) or "Unknown date"
     local chapters = chaptersElement and encodeHelper:parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
         or "Unknown chapters"
-    local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent()) or "Unknown language"
+    local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent():gsub("%s+", "")) or "Unknown language"
 
     -- Extract logged in metadata values
     local markedForLater = markedForLaterElement ~= nil and encodeHelper:parseToCodepoints(markedForLaterElement:getcontent()) == "Mark as Read"
@@ -2353,6 +2583,7 @@ function AO3WebParser:parseWorkPage(root)
         characters = characters or {},
         warnings = warnings or {},
         fandoms = fandoms or {},
+        series = series or {},
         published = publishedDate,
         updated = updatedDate,
         wordcount = wordcount,
