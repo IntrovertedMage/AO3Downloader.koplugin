@@ -2811,7 +2811,7 @@ function HTTPQueryHandler:performHTTPRequest(request, retries)
             logger.dbg("AO3Downloader.koplugin: Redirecting to new URL: " .. new_url)
             request.url = new_url -- Update the request URL
             return self:performHTTPRequest(request, retries) -- Recursive call for the new URL
-        elseif response == 1 then
+        elseif response == 1 and status ~= 418 then
             socketutil:reset_timeout()
             return {
                 success = true,
