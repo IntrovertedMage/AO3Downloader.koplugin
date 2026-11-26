@@ -9,12 +9,16 @@ local AO3DownloaderClient = require("AO3_downloader_client")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
-local MultiInputDialog = require("ui/widget/multiinputdialog")
 local FanficBookmarkDialog = require("fanfic_bookmark_dialog")
 local logger = require("logger")
+local Cancellable = require("cancellable")
+local _ = require("gettext")
 
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
+
+local UIResult = require("ui_result")
+local unwrap = UIResult.unwrap
 
 local FanficReader = {
     on_return_callback = nil,
@@ -63,34 +67,21 @@ function FanficReader:addToMainMenu(menu_items)
                     {
                         text = "Comment",
                         is_enter_default = true,
-                        callback = function()
-                            local NetworkMgr = require("ui/network/manager")
-
-                            if not NetworkMgr:isConnected() then
-                                NetworkMgr:runWhenConnected()
-                                return
-                            end
-
+                        callback = Cancellable.wrap(_("Posting comment…"), function()
                             if self.input_dialog:getInputText() == "" then
                                 return
                             end
-                            local request_result = AO3DownloaderClient:commentOnWork(
+                            if unwrap(AO3DownloaderClient:commentOnWork(
                                 self.input_dialog:getInputText(),
                                 self.current_fanfic.id,
                                 chapter_id
-                            )
-                            if request_result.success then
+                            )) then
                                 UIManager:show(InfoMessage:new({
                                     text = "Successfuly commented on work",
                                 }))
                                 UIManager:close(self.input_dialog)
-                                return
                             end
-
-                            UIManager:show(InfoMessage:new({
-                                text = "Error: " .. request_result.error,
-                            }))
-                        end,
+                        end),
                     },
                 },
             },
@@ -111,98 +102,53 @@ function FanficReader:addToMainMenu(menu_items)
                 {
                     {
                         text = self.current_fanfic.markedForLater and "Mark as read" or "Mark for later",
-                        callback = function()
-                            local NetworkMgr = require("ui/network/manager")
+                        callback = Cancellable.wrap(_("Updating work…"), function()
+                            if unwrap(AO3DownloaderClient:markForLaterWork(self.current_fanfic.id,
+                                self.current_fanfic.markedForLater)) then
+                                self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
+                                DownloadedFanfics.update(self.current_fanfic, false)
 
-                            if not NetworkMgr:isConnected() then
-                                NetworkMgr:runWhenConnected()
-                                return
-                            end
-
-                            local request_result = AO3DownloaderClient:markForLaterWork(self.current_fanfic.id,
-                                self.current_fanfic.markedForLater)
-
-                            self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
-                            DownloadedFanfics.update(self.current_fanfic, false)
-
-                            if request_result.success then
                                 UIManager:show(InfoMessage:new({
                                     text = self.current_fanfic.markedForLater and "Fanfic Marked for Later" or
                                         "Fanfic Marked as Read",
                                 }))
-                            else
-                                UIManager:show(InfoMessage:new({
-                                    text = "Error: " .. request_result.error,
-                                }))
                             end
 
                             UIManager:close(dialog)
-                        end,
+                        end),
                     }
                     },
                     {
                         {
                             text = self.current_fanfic.subscriptionID and "Unsubscribe from work" or "Subscribe to work",
-                            callback = function()
-                                local NetworkMgr = require("ui/network/manager")
-
-                                if not NetworkMgr:isConnected() then
-                                    NetworkMgr:runWhenConnected()
-                                    return
-                                end
-
-                                local request_result = AO3DownloaderClient:setWorkSubscription(self.current_fanfic.id,
-                                    self.current_fanfic.subscriptionID)
-                                if request_result.success then
-                                    if request_result.subscription_id then
-                                        self.current_fanfic.subscriptionID = request_result.subscription_id
-                                    else
-                                        self.current_fanfic.subscriptionID = false
-                                    end
+                            callback = Cancellable.wrap(_("Updating subscription…"), function()
+                                local result = unwrap(AO3DownloaderClient:setWorkSubscription(self.current_fanfic.id,
+                                    self.current_fanfic.subscriptionID))
+                                if result then
+                                    self.current_fanfic.subscriptionID = result.subscription_id or false
                                     DownloadedFanfics.update(self.current_fanfic, false)
 
                                     UIManager:show(InfoMessage:new({
                                         text = self.current_fanfic.subscriptionID and "Subscribed to Fanfic" or
                                         "Unsubscribed from Fanfic",
                                     }))
-                                else
-                                    UIManager:show(InfoMessage:new({
-                                        text = "Error: " .. request_result.error .. (self.current_fanfic.subscriptionID or ""),
-                                    }))
                                 end
 
                                 UIManager:close(dialog)
-                            end,
+                            end),
                         }
                     },
                     {
                         {
                             text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
-                            callback = function ()
-                                local NetworkMgr = require("ui/network/manager")
-                                if not NetworkMgr:isConnected() then
-                                    NetworkMgr:runWhenConnected()
-                                     return false
+                            callback = Cancellable.wrap(_("Loading bookmark…"), function()
+                                local result = unwrap(AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id))
+                                if not result then
+                                    return
                                 end
-
-                                local request_result = AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id)
-                                if  request_result.success then
-                                    self.current_fanfic.bookmarkContent = request_result.bookmark_data
-
-                                    if request_result.bookmark_id then
-                                        self.current_fanfic.bookmarkID = request_result.bookmark_id
-                                    else
-                                        self.current_fanfic.bookmarkID = false
-                                    end
-                                    DownloadedFanfics.update(self.current_fanfic, false)
-
-                                else
-                                    local info_message = InfoMessage:new({
-                                        text = "Error: " .. request_result.error,
-                                    })
-                                    info_message[1].ignore = "height"
-                                    UIManager:show(info_message)
-                                end
+                                self.current_fanfic.bookmarkContent = result.data
+                                self.current_fanfic.bookmarkID = result.bookmark_id or false
+                                DownloadedFanfics.update(self.current_fanfic, false)
 
 
                                 local fanficBookmark_dialog =  FanficBookmarkDialog:new({
@@ -213,13 +159,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     bookmark_private = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.private or false,
                                     bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
                                     save_dialog_callback = function(bookmark_data)
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return false
-                                        end
-
-                                        local request_result = AO3DownloaderClient:updateBookmark(
+                                        local result = unwrap(AO3DownloaderClient:updateBookmark(
                                             self.current_fanfic.id,
                                             self.current_fanfic.bookmarkID,
                                             bookmark_data.notes,
@@ -227,43 +167,23 @@ function FanficReader:addToMainMenu(menu_items)
                                             bookmark_data.collections,
                                             bookmark_data.private,
                                             bookmark_data.rec
-                                        )
-
-                                        if request_result.success then
-                                            local originalBMID = self.current_fanfic.bookmarkID
-
-                                            self.current_fanfic.bookmarkContent = bookmark_data
-
-                                            if request_result.bookmark_id then
-                                                self.current_fanfic.bookmarkID = request_result.bookmark_id
-                                            else
-                                                self.current_fanfic.bookmarkID = false
-                                            end
-                                            DownloadedFanfics.update(self.current_fanfic, false)
-
-                                            UIManager:show(InfoMessage:new({
-                                                text = originalBMID and "Updated Bookmark" or "Created Bookmark",
-                                            }))
-                                            return true
-                                        else
-                                            logger.dbg("Error saving bookmark: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
+                                        ))
+                                        if not result then
                                             return false
                                         end
 
+                                        local originalBMID = self.current_fanfic.bookmarkID
+                                        self.current_fanfic.bookmarkContent = bookmark_data
+                                        self.current_fanfic.bookmarkID = result.bookmark_id or false
+                                        DownloadedFanfics.update(self.current_fanfic, false)
+
+                                        UIManager:show(InfoMessage:new({
+                                            text = originalBMID and "Updated Bookmark" or "Created Bookmark",
+                                        }))
+                                        return true
                                     end,
                                     delete_dialog_callback = function()
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return false
-                                        end
-
-                                        local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
-
-                                        if request_result.success then
+                                        if unwrap(AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)) then
                                             self.current_fanfic.bookmarkID = false
                                             self.current_fanfic.bookmarkContent = {}
                                             DownloadedFanfics.update(self.current_fanfic, false)
@@ -272,35 +192,13 @@ function FanficReader:addToMainMenu(menu_items)
                                                 text = "Deleted Bookmark",
                                             }))
                                             return true
-                                        else
-                                            logger.dbg("Error deleting bookmark: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-                                            return false
                                         end
+                                        return false
 
                                     end,
 
                                     search_collections_callback = function(collection_name)
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return
-                                        end
-
-
-                                        local request_result = AO3DownloaderClient:searchForCollections(collection_name)
-
-                                        if request_result.success then
-                                            return request_result.collections
-                                        else
-                                            logger.dbg("Error searching collections: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-                                            return nil
-                                        end
+                                        return unwrap(AO3DownloaderClient:searchForCollections(collection_name))
                                     end
 
                                 })
@@ -312,7 +210,7 @@ function FanficReader:addToMainMenu(menu_items)
 
                                 UIManager:close(dialog)
 
-                            end
+                            end)
                         }
                     }
                 },
@@ -324,27 +222,13 @@ function FanficReader:addToMainMenu(menu_items)
         text = "Give kudos to work ♥",
         sorting_hint = "main",
         keep_menu_open = true,
-        callback = function()
-            local NetworkMgr = require("ui/network/manager")
-
-            if not NetworkMgr:isConnected() then
-                NetworkMgr:runWhenConnected()
-                return
-            end
-
-            local request_result = AO3DownloaderClient:kudosWork(self.current_fanfic.id)
-
-            if request_result.success then
+        callback = Cancellable.wrap(_("Leaving kudos…"), function()
+            if unwrap(AO3DownloaderClient:kudosWork(self.current_fanfic.id)) then
                 UIManager:show(InfoMessage:new({
                     text = "Thank you for leaving kudos!",
                 }))
-                return
             end
-
-            UIManager:show(InfoMessage:new({
-                text = "Error: " .. request_result.error,
-            }))
-        end,
+        end),
     }
 
     menu_items.AO3_downloader_comment_work = {

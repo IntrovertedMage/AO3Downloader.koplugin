@@ -4,7 +4,6 @@ local TextViewer = require("ui/widget/textviewer")
 local util = require("util")
 local logger = require("logger")
 local DownloadedFanfics = require("downloaded_fanfics")
-local FanficReader = require("fanfic_reader")
 local _ = require("gettext")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
@@ -13,23 +12,7 @@ local Config = require("fanfic_config")
 
 local DownloadedFanficsMenu = {}
 
--- Helper function to normalize a field to always be a table
-local function normalizeField(field)
-    if type(field) == "string" then
-        -- Split the string by commas and trim whitespace
-        local result = {}
-        for item in string.gmatch(field, "([^,]+)") do
-            table.insert(result, util.trim(item))
-        end
-        return result
-    elseif type(field) == "table" then
-        return field -- Already a table
-    else
-        return {}    -- Default to an empty table
-    end
-end
-
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
+function DownloadedFanficsMenu:show(ui, parentMenu, Fanfic)
     self.Fanfic = Fanfic
 
     local function refreshDownloadMenu()
@@ -41,18 +24,11 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
             return
         end
 
-        -- Normalize relationships, characters, and tags for each fanfic
-        for _, fanfic in pairs(downloaded_fanfics) do
-            fanfic.relationships = normalizeField(fanfic.relationships)
-            fanfic.characters = normalizeField(fanfic.characters)
-            fanfic.tags = normalizeField(fanfic.tags)
-        end
-
         -- Group fanfics by fandom and track the most recent `last_accessed` timestamp
         local fandom_groups = {}
         local fandom_last_accessed = {}
         for __, fanfic in pairs(downloaded_fanfics) do
-            local fandoms = fanfic.fandoms or { _("Unknown Fandom") }
+            local fandoms = #fanfic.fandoms > 0 and fanfic.fandoms or { _("Unknown Fandom") }
             for __, fandom in pairs(fandoms) do
                 if not fandom_groups[fandom] then
                     fandom_groups[fandom] = {}
@@ -177,17 +153,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                             {
                                                 text = _("Update"),
                                                 callback = function()
-                                                    UIManager:scheduleIn(1, function()
-                                                        -- Update the fanfic
-                                                        updateFanficCallback(fanfic)
-                                                        UIManager:close(dialog)
-                                                    end)
-                                                    UIManager:show(InfoMessage:new({
-                                                        text = _("Downloading work may take some time…"),
-                                                        timeout = 1,
-                                                    }))
+                                                    self.Fanfic:UpdateFanfic(fanfic)
+                                                    UIManager:close(dialog)
                                                 end,
-                                                UIManager:close(dialog),
                                             },
                                             {
                                                 text = _("View Details"),

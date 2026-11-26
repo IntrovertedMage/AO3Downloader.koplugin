@@ -1,30 +1,24 @@
 local Menu = require("ui/widget/menu")
 local _ = require("gettext")
+local Cancellable = require("cancellable")
+local UIResult = require("ui_result")
+local AO3WebParser = require("ao3_parser")
+local AO3DownloaderClient = require("AO3_downloader_client")
 local FanficSearch = require("fanfic_search")
-local FanficBrowser = require("fanficbrowser")
 local Config = require("fanfic_config")
 local UIManager = require("ui/uimanager")
 local DownloadedFanficsMenu = require("downloaded_fanfics_menu")
 local ButtonDialog = require("ui/widget/buttondialog")
-local util = require("util")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
-local logger = require("logger")
 local CustomFilterMenu = require("custom_filter_menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local DownloadedFanfics = require("downloaded_fanfics")
 
-function util.contains(table, value)
-    for _, v in ipairs(table) do
-        if v == value then
-            return true
-        end
-    end
-    return false
-end
+local contains = require("util").arrayContains
 
 local FanficMenuWidget = Menu:extend({
     fanfic = nil,
@@ -133,30 +127,32 @@ function FanficMenu:refreshAccountManagementMenu()
         table.insert(menu_items, {
             text = "View your AO3 profile",
             callback = function()
-                self.fanfic:showUserInfo(self.username, self.username, self.menuWidget)
+                self.fanfic:showUserInfo(self.username, self.username)
             end,
         })
         table.insert(menu_items, {
             text = "Log out",
-            callback = function()
-                self.logged_in = not self.fanfic:logoutOfAO3()
+            callback = Cancellable.wrap(_("Logging out…"), function()
+                if UIResult.unwrap(AO3DownloaderClient:endLoggedInSession()) then
+                    self.logged_in = false
+                    UIManager:show(InfoMessage:new{ text = _("Successfully logged out") })
+                end
                 self.menuWidget.item_table = self:refreshAccountManagementMenu()
                 self.menuWidget:updateItems()
-            end,
+            end),
         })
     end
 
     return menu_items
 end
 
-function FanficMenu:onAccountManagementMenu()
-    local success
-    success, self.logged_in, self.username = self.fanfic:checkLoggedIn()
-
-    if success then
+FanficMenu.onAccountManagementMenu = Cancellable.wrap(_("Checking login status…"), function(self)
+    local session = UIResult.unwrap(AO3DownloaderClient:GetSessionStatus())
+    if session then
+        self.logged_in, self.username = session.logged_in, session.username
         self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
     end
-end
+end)
 
 function FanficMenu:enterUserDetails()
     self.login_dialog = MultiInputDialog:new({
@@ -184,14 +180,17 @@ function FanficMenu:enterUserDetails()
                 },
                 {
                     text = "Login",
-                    callback = function()
+                    callback = Cancellable.wrap(_("Logging in…"), function()
                         local myfields = self.login_dialog:getFields()
                         UIManager:close(self.login_dialog)
-                        self.logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        self.logged_in = UIResult.unwrap(AO3DownloaderClient:startLoggedInSession(myfields[1], myfields[2])) or false
+                        if self.logged_in then
+                            UIManager:show(InfoMessage:new{ text = "Login successful! Welcome, " .. myfields[1] .. "!" })
+                        end
                         self.username = myfields[1]
                         self.menuWidget.item_table = self:refreshAccountManagementMenu()
                         self.menuWidget:updateItems()
-                    end,
+                    end),
                 },
             },
         },
@@ -304,19 +303,11 @@ function FanficMenu:onSelectTag(category)
                                 {
                                     text = _(T("Unbookmark %1", category)),
                                     callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(bookmarks) do
-                                            if v == tag then
-                                                table.remove(bookmarks, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting(bookmarkSetting, bookmarks)
+                                        Config:toggleInSetting(bookmarkSetting, tag)
                                         UIManager:show(InfoMessage:new({
                                             text = T("'%1' has been removed from your bookmarks.", tag),
                                         }))
                                         UIManager:close(dialog)
-                                        refreshMenu()                              -- Refresh the menu to update the star
                                         self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
                                         self.menuWidget:updateItems()
                                     end,
@@ -357,9 +348,9 @@ function FanficMenu:onSearchTag(category)
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Cancellable.wrap(T("Downloading %1 info…", category), function()
                         local query = searchDialog:getInputText()
-                        local success, tags
+                        local tags
                         -- Function to refresh the menu items
                         local function refreshMenu()
                             local bookmarks = Config:readSetting(bookmarkSetting, {})
@@ -367,7 +358,7 @@ function FanficMenu:onSearchTag(category)
                             -- Show the matching fandoms in a menu
                             local menu_items = {}
                             for __, tag in ipairs(tags) do
-                                local isBookmarked = util.contains(bookmarks, tag.name)
+                                local isBookmarked = contains(bookmarks, tag.name)
                                 local displayText = isBookmarked and T("★ (%1) %2", tag.uses, tag.name)
                                     or T("(%1) %2", tag.uses, tag.name)
 
@@ -392,35 +383,12 @@ function FanficMenu:onSearchTag(category)
                                                             or T("Unbookmark %1", category)
                                                         ),
                                                         callback = function()
-                                                            -- Add the fandom to bookmarks
-                                                            if not isBookmarked then
-                                                                table.insert(bookmarks, tag.name)
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been added to your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            else
-                                                                for i, v in ipairs(bookmarks) do
-                                                                    if v == tag.name then
-                                                                        table.remove(bookmarks, i)
-                                                                        break
-                                                                    end
-                                                                end
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been removed from your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            end
+                                                            local added = Config:toggleInSetting(bookmarkSetting, tag.name)
+                                                            UIManager:show(InfoMessage:new({
+                                                                text = added
+                                                                    and T("'%1' has been added to your bookmarks.", tag.name)
+                                                                    or T("'%1' has been removed from your bookmarks.", tag.name),
+                                                            }))
                                                             UIManager:close(dialog)
                                                             self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
                                                             self.menuWidget:updateItems()
@@ -435,26 +403,19 @@ function FanficMenu:onSearchTag(category)
                             end
                             return menu_items
                         end
-                        UIManager:scheduleIn(1, function()
-                            local success
-                            success, tags = self.fanfic:searchForTags(query, category)
+                        tags = UIResult.unwrap(AO3DownloaderClient:searchForTags(query, category))
 
-                            UIManager:close(searchDialog)
+                        UIManager:close(searchDialog)
 
-                            if not success or not tags then
-                                return
-                            end
-                            --
+                        if not tags then
+                            return
+                        end
+                        --
 
-                            -- Initial menu display
+                        -- Initial menu display
 
-                            self.menuWidget:GoDownInMenu(T('"%1" %2 query results', query, category), refreshMenu())
-                        end)
-                        UIManager:show(InfoMessage:new({
-                            text = T("Downloading %1 info may take some time…", category),
-                            timeout = 1,
-                        }))
-                    end,
+                        self.menuWidget:GoDownInMenu(T('"%1" %2 query results', query, category), refreshMenu())
+                    end),
                 },
             },
         },
@@ -484,32 +445,18 @@ function FanficMenu:onBrowseByTag(selectedTag)
         table.insert(menu_items, {
             text = option.text,
             callback = function()
-                UIManager:scheduleIn(1, function()
-                    local success, ficResults, fetchNextPage = self.fanfic:fetchFanficsByTag(selectedTag, option.value)
-                    if not success then
-                        return
-                    end
-
-                    self.fanfic:onShowFanficBrowser(
-                        ficResults,
-                        fetchNextPage
-                    )
+                self.fanfic:browse(_("Downloading works data…"), function(page)
+                    return AO3DownloaderClient:searchByTag(selectedTag, option.value, page)
                 end)
-                UIManager:show(InfoMessage:new({
-                    text = _("Downloading works data may take some time…"),
-                    timeout = 1,
-                }))
             end,
         })
     end
 
-    self.menuWidget:GoDownInMenu("Sort by...", menu_items)
+    self.menuWidget:GoDownInMenu("Sort by…", menu_items)
 end
 
 function FanficMenu:onViewDownloadedFanfics()
-    DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, function(fanfic)
-        self.fanfic:UpdateFanfic(fanfic)
-    end, self.fanfic)
+    DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, self.fanfic)
 end
 
 function FanficMenu:onSelectUserSearch()
@@ -541,29 +488,15 @@ function FanficMenu:onSelectUserSearch()
                                 {
                                     text = _("View user profile"),
                                     callback = function()
-                                        local username, pseud
-                                        if string.find(user, "%(") and string.find(user, "%)") then
-                                            username = string.match(user, "%((.-)%)")
-                                            pseud = string.match(user, "^(.-)%s*%(")
-                                        else
-                                            username = user
-                                            pseud = user
-                                        end
-                                        self.fanfic:showUserInfo(username, pseud, self.menuWidget)
+                                        local username, pseud = AO3WebParser.parseAuthorName(user)
+                                        self.fanfic:showUserInfo(username, pseud)
                                         UIManager:close(dialog)
                                     end,
                                 },
                                 {
                                     text = _("Unbookmark User"),
                                     callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(users) do
-                                            if v == user then
-                                                table.remove(users, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting("bookmarkedUsers", users)
+                                        Config:toggleInSetting("bookmarkedUsers", user)
                                         UIManager:show(InfoMessage:new({
                                             text = T("User: '%1' has been removed from your bookmarks.", user),
                                         }))
@@ -607,11 +540,11 @@ function FanficMenu:onSearchUser()
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Cancellable.wrap(_("Searching users…"), function()
                         local user_query = search_dialog:getInputText()
                         UIManager:close(search_dialog)
-                        local success, users, next_page = self.fanfic:searchForUsers(user_query)
-                        if not success then
+                        local users = UIResult.unwrap(AO3DownloaderClient:searchForUsers(user_query))
+                        if not users then
                             return
                         end
                         local function generateMenuItems()
@@ -627,7 +560,7 @@ function FanficMenu:onSearchUser()
                                                     {
                                                         text = _("View user profile"),
                                                         callback = function()
-                                                            self.fanfic:showUserInfo(user.username, user.pseud, self.menuWidget)
+                                                            self.fanfic:showUserInfo(user.username, user.pseud)
                                                             UIManager:close(dialog)
                                                         end,
                                                     },
@@ -637,7 +570,7 @@ function FanficMenu:onSearchUser()
                                                         text = _("Bookmark User"),
                                                         callback = function()
                                                             local users = Config:readSetting("bookmarkedUsers", {})
-                                                            if not util.contains(users, user.username) then
+                                                            if not contains(users, user.username) then
                                                                 table.insert(users, user.username)
                                                                 Config:saveSetting("bookmarkedUsers", users)
                                                                 UIManager:show(InfoMessage:new({
@@ -661,7 +594,7 @@ function FanficMenu:onSearchUser()
                             return menu_items
                         end
                         self.menuWidget:GoDownInMenu(T('"%1" user search results', user_query), generateMenuItems())
-                    end,
+                    end),
                 },
             }
         }
@@ -672,21 +605,9 @@ function FanficMenu:onSearchUser()
 end
 
 function FanficMenu:onSelectAccountHistory(marked_for_later)
-    UIManager:scheduleIn(1, function()
-        local success, ficResults, fetchNextPage = self.fanfic:getWorksFromAccountHistory(marked_for_later)
-        if not success then
-            return
-        end
-
-        self.fanfic:onShowFanficBrowser(
-            ficResults,
-            fetchNextPage
-        )
+    self.fanfic:browse(_("Downloading works data…"), function(page)
+        return AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page)
     end)
-    UIManager:show(InfoMessage:new({
-        text = _("Downloading works data may take some time…"),
-        timeout = 1,
-    }))
 end
 
 function FanficMenu:onOpenSettings()
@@ -730,7 +651,21 @@ function FanficMenu:onOpenSettings()
         { text = "Re-sort file paths", call_function = DownloadedFanfics.sortFanfics, type = "Function"},
         { text = "Chapter progress format", setting = "show_current_chapter", type = "Bool", on="First Unread", off="Total Remaining"},
     }
-    local function generateMenuItems()
+    local generateMenuItems -- the saved-setting helpers below call back into it
+
+    local function refreshSettingsMenu()
+        self.menuWidget:switchItemTable(nil, generateMenuItems())
+        self.menuWidget:updateItems()
+    end
+
+    local function confirmSettingSaved(setting)
+        refreshSettingsMenu()
+        UIManager:show(InfoMessage:new{
+            text = T("'%1' updated successfully.", setting.text),
+        })
+    end
+
+    generateMenuItems = function()
         local settings_menu_items = {}
 
         for __, setting in ipairs(settings_options) do
@@ -770,11 +705,7 @@ function FanficMenu:onOpenSettings()
                                             end
                                             Config:saveSetting(setting.setting, newValue)
                                             UIManager:close(inputDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -798,11 +729,7 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             Config:saveSetting(setting.setting, true)
                                             UIManager:close(buttonDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -813,11 +740,7 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             Config:saveSetting(setting.setting, false)
                                             UIManager:close(buttonDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -834,10 +757,8 @@ function FanficMenu:onOpenSettings()
                         local current_path = Config:readSetting(setting.setting)
                         local default_path = filemanagerutil.getDefaultDir()
                         local caller_callback = function(path)
-                            Config:saveSetting(setting.setting, path);
-                            menu_item.text = setting.text .. ": " .. (Config:readSetting(setting.setting) or "")
-                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                            self.menuWidget:updateItems()
+                            Config:saveSetting(setting.setting, path)
+                            refreshSettingsMenu()
                         end
                         filemanagerutil.showChooseDialog(title_header, caller_callback, current_path, default_path)
                     end
@@ -857,8 +778,10 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             UIManager:close(dialog)
                                             local notice = InfoMessage:new{
-                                                text = T("Carrying out task '%1' may take some time...", setting.text);
+                                                text = T("Carrying out task '%1'…", setting.text);
                                             }
+                                            -- local file work only (no network), so no Cancel dialog; the
+                                            -- delay just lets the notice paint before the rescan starts
                                             UIManager:scheduleIn(1, function()
 
                                                 setting.call_function()

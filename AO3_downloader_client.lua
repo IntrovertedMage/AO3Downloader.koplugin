@@ -1,1558 +1,527 @@
-
+-- Every public method returns its value on success, or nil and an error message.
+-- Methods make requests, so they must run inside Cancellable.run (one action at a time);
+-- calling one outside raises, and a cancel unwinds them by throwing Cancellable.CANCELLED.
 local logger = require("logger")
-local socketutil = require("socketutil")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local Config = require("fanfic_config")
-local util = require("util")
-local https = require("ssl.https") -- Use luasec for HTTPS requests
+local HTTPQueryHandler = require("ao3_http")
+local AO3WebParser = require("ao3_parser")
 local htmlparser = require("htmlparser")
+local json = require("rapidjson")
 htmlparser_looplimit = 1000000000
-
-local function getAO3URL()
-    return Config:readSetting("AO3_domain")
-end
 
 local AO3DownloaderClient = {}
 
-local AO3WebParser = {}
-
-local HTTPQueryHandler = {}
-
-local encodeHelper = {}
-
-
-function encodeHelper:urlEncode(str)
-    if str then
-        str = str:gsub("([^%w%-%.%_%~])", function(c)
-            return string.format("%%%02X", string.byte(c))
-        end)
-    end
-    return str
+local function failure(error_message, result)
+    return nil, T("%1 Status: %2", error_message, result.error or result.status or "unknown error")
 end
 
-function encodeHelper:formEncode(str)
-    if str then
-        str = string.gsub(str, " ", "+")
-        str = str:gsub("([^%w%-%.%_%~%+])", function(c)
-            return string.format("%%%02X", string.byte(c))
-        end)
-    end
-    return str
-end
-
-function encodeHelper:unescapeText(str)
-    local unescape_map = {
-        ["lt"] = "<",
-        ["gt"] = ">",
-        ["amp"] = "&",
-        ["quot"] = '"',
-        ["apos"] = "'",
-    }
-
-    local gsub = string.gsub
-    local result = gsub(str, "(&(#?)([%d%a]+);)", function(orig, n, s)
-        if unescape_map[s] then
-            return unescape_map[s]
-        elseif n == "#" then -- unescape unicode
-            local codepoint
-            -- Determine if the code point is written as a decimal or hexadecimal number
-            if string.sub(s, 1, 1) == "x" then
-                codepoint = tonumber(string.sub(s, 2), 16)
-            else
-                codepoint = tonumber(s)
-            end
-            return util.unicodeCodepointToUtf8(codepoint)
-        else
-            return orig
+-- Returns the parsed page, or nil and an error; opts.not_found replaces the message on a 404.
+local function getPage(url, error_message, opts)
+    local result, body = HTTPQueryHandler.get(url, opts)
+    if not result.success then
+        if result.status == 404 and opts and opts.not_found then
+            return nil, opts.not_found
         end
-    end)
-    return result
+        return failure(error_message, result)
+    end
+    return htmlparser.parse(body)
 end
 
-function encodeHelper:parseToCodepoints(str)
-    return self:unescapeText(str)
+-- Returns parse(root) for the page at url, or nil and an error.
+local function parsePage(url, error_message, parse, opts)
+    local root, err = getPage(url, error_message, opts)
+    if not root then
+        return nil, err
+    end
+    return parse(root)
 end
 
-function encodeHelper:parseFromHTML(str)
-    return encodeHelper:parseToCodepoints(
-                    str
-                        :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                        :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                        :gsub("<[^>]+>", "") -- Remove other HTML tags
-                        :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace
-                )
+local function getJSON(url, error_message)
+    local result, body = HTTPQueryHandler.get(url, { json = true })
+    if not result.success then
+        return failure(error_message, result)
+    end
+    local data = json.decode(body)
+    if not data then
+        return nil, T("%1 Invalid JSON response.", error_message)
+    end
+    return data
 end
 
-function encodeHelper:generateParametersStringForm(params)
-    local form_parts = {}
-    for key, value in pairs(params) do
-        table.insert(form_parts, encodeHelper:formEncode(key) .. "=" .. encodeHelper:formEncode(value))
+-- POSTs a form; returns the result and body when its status is one of ok_statuses, else nil and an error.
+local function postAction(url, fields, ok_statuses, error_message, opts)
+    local result, body = HTTPQueryHandler.postForm(url, fields, opts)
+    for _, status in ipairs(ok_statuses) do
+        if result.status == status then
+            return result, body
+        end
     end
-    return table.concat(form_parts, "&")
+    return failure(error_message, result)
 end
 
-function AO3DownloaderClient:requestAO3Token()
-    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token...")
-    local tokenRequestURL = getAO3URL() .. "/token_dispenser.json"
-
-    local response_body = {}
-
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-    headers["Accept-Encoding"] = nil
-
-    local request = {
-        url = tokenRequestURL,
-        method = "GET",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to request AO3 token. Status: %1", request_result.status or "unknown error"),
-        }
+local function fetchToken()
+    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token…")
+    local data, err = getJSON(Config:getAO3Domain() .. "/token_dispenser.json", "Failed to request AO3 token.")
+    if data and not data.token then
+        data, err = nil, "AO3 token not found in response."
     end
-
-    local html_body = table.concat(response_body)
-
-    local json = require("dkjson")
-    local success, token_data = pcall(json.decode, html_body)
-
-    if not success then
-        return {
-            success = false,
-            error = T("Failed to parse AO3 token response."),
-        }
+    if not data then
+        return nil, T("Failed to retrieve AO3 token: %1", err)
     end
+    return data.token
+end
 
-    if token_data and token_data.token then
-        return {
-            success = true,
-            token = token_data.token,
-        }
-    else
-        return {
-            success = false,
-            error = T("AO3 token not found in response."),
-        }
+-- Returns the session, or nil and an error unless logged in.
+local function requireLogin(action)
+    local session, err = AO3DownloaderClient:GetSessionStatus()
+    if not session then
+        return nil, T("Failed to check login status: %1", err)
     end
+    if not session.logged_in then
+        return nil, T("User must be logged in to %1.", action)
+    end
+    return session
+end
+
+-- Like requireLogin, with a fresh authenticity token in session.token.
+local function requireLoginToken(action)
+    local session, err = requireLogin(action)
+    if not session then
+        return nil, err
+    end
+    session.token, err = fetchToken()
+    if not session.token then
+        return nil, err
+    end
+    return session
+end
+
+-- Follows a login/logout redirect and checks the page body has the expected class.
+local function followSessionRedirect(result, error_message, body_class, mismatch_message)
+    local root, err = getPage(result.response_headers["location"] or Config:getAO3Domain(), error_message)
+    if not root then
+        return nil, err
+    end
+    if #root:select("body." .. body_class) == 0 then
+        return nil, mismatch_message
+    end
+    return true
 end
 
 function AO3DownloaderClient:startLoggedInSession(username, password)
-    local homepage_url = getAO3URL()
+    local homepage_url = Config:getAO3Domain()
 
-    local response_body = {}
-
-    local request = {
-        url = homepage_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
-        }
+    local homepage = HTTPQueryHandler.get(homepage_url)
+    if not homepage.success then
+        return failure("Failed to access AO3 homepage.", homepage)
     end
 
-    local ao3_token = self:requestAO3Token()
-
-    if not ao3_token.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token: %1", ao3_token.error or "unknown error"),
-        }
+    local token, err = fetchToken()
+    if not token then
+        return nil, err
     end
 
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    local form_data = encodeHelper:generateParametersStringForm({
-        ["authenticity_token"] = ao3_token.token,
+    local result
+    result, err = postAction(homepage_url .. "/users/login", {
+        ["authenticity_token"] = token,
         ["user[login]"] = username,
         ["user[password]"] = password,
-        ["commit"] = "Log+In",
-    })
-
-    headers["Content-Length"] = tostring(#form_data)
-    local response_body = {}
-
-    local request = {
-        url = homepage_url .. "/users/login",
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success or request_result.status ~= 302 then
-        return {
-            success = false,
-            error = T("Login failed. Status: %1", request_result.status or "unknown error"),
-        }
+        ["commit"] = "Log In",
+    }, { 302 }, "Login failed.")
+    if not result then
+        return nil, err
     end
 
-    local redirect_url = request_result.response_headers["location"] or homepage_url
-
-    response_body = {}
-    local request = {
-        url = redirect_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to complete login redirect. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local body_content = table.concat(response_body)
-
-    if body_content:find('<body[^>]*class="[^"]*logged%-in[^"]*"') then
-        return {
-            success = true,
-        }
-    else
-        return {
-            success = false,
-            error = T("Login failed. Please check your credentials."),
-        }
-    end
+    return followSessionRedirect(result, "Failed to complete login redirect.", "logged-in",
+        "Login failed. Please check your credentials.")
 end
 
 function AO3DownloaderClient:endLoggedInSession()
-    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session...")
-    local authenticity_token = self:requestAO3Token()
-
-    if not authenticity_token.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token for logout: %1", authenticity_token.error or "unknown error"),
-        }
+    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session…")
+    local token, err = fetchToken()
+    if not token then
+        return nil, err
     end
 
-    local logout_url = T("%1/users/logout", getAO3URL())
-
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    local form_data = encodeHelper:generateParametersStringForm({
+    local result
+    result, err = postAction(Config:getAO3Domain() .. "/users/logout", {
         ["_method"] = "delete",
-        ["authenticity_token"] = authenticity_token.token,
-    })
-    headers["Content-Length"] = tostring(#form_data)
-
-    local response_body = {}
-
-    local request = {
-        url = logout_url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success or request_result.status ~= 302 then
-        return {
-            success = false,
-            error = T("Failed to perform logout request. Status: %1", request_result.status or "unknown error"),
-        }
+        ["authenticity_token"] = token,
+    }, { 302 }, "Failed to perform logout request.")
+    if not result then
+        return nil, err
     end
 
-    local redirect_url = request_result.response_headers["location"] or getAO3URL()
-    response_body = {}
-
-    local request = {
-        url = redirect_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to complete logout redirect. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local body_content = table.concat(response_body)
-    if body_content:find('<body[^>]*class="[^"]*logged%-out[^"]*"') then
-        return {
-            success = true,
-        }
-    else
-        return {
-            success = false,
-            error = T("Logout may have failed; still appears to be logged in."),
-        }
-    end
+    return followSessionRedirect(result, "Failed to complete logout redirect.", "logged-out",
+        "Logout may have failed; still appears to be logged in.")
 end
 
+-- Returns { logged_in, username }.
 function AO3DownloaderClient:GetSessionStatus()
-    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status...")
-    local homepage_url = getAO3URL()
-    local response_body = {}
-
-    local request = {
-        url = homepage_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
-        }
+    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status…")
+    local root, err = getPage(Config:getAO3Domain(), "Failed to access AO3 homepage.")
+    if not root then
+        return nil, err
     end
 
-    local body_content = table.concat(response_body)
-    local root = htmlparser.parse(body_content)
-
-    local is_logged_in = #root:select('body.logged-in') > 0
-
-    if is_logged_in then
-        local usernames_select = root:select('a[href^="/users/"]')
-
-        -- Filter out any links that do not match the expected "/users/username" pattern
-        for index = #usernames_select, 1, -1 do
-            local href = usernames_select[index].attributes and usernames_select[index].attributes.href
-            if not href or not href:match('^/users/[^/]+$') then
-                table.remove(usernames_select, index)
-            end
-        end
-
-        if  #usernames_select == 0 then
-            return {
-                session_exists = true,
-                success = false,
-                error = T("Failed to parse username from AO3 homepage."),
-            }
-        end
-
-
-        -- parse username from "/users/username" href
-        local username = usernames_select[1].attributes.href:match("/users/([^/]+)")
-
-        return {
-            session_exists = true,
-            logged_in = true,
-            username = username,
-            success = true,
-        }
-    else
-        return {
-            session_exists = true,
-            logged_in = false,
-            username = nil,
-            success = true,
-        }
-
+    if #root:select("body.logged-in") == 0 then
+        return { logged_in = false }
     end
+
+    for _, link in ipairs(root:select('a[href^="/users/"]')) do
+        local username = link.attributes and link.attributes.href and link.attributes.href:match("^/users/([^/]+)$")
+        if username then
+            return { logged_in = true, username = username }
+        end
+    end
+    return nil, "Failed to parse username from AO3 homepage."
 end
 
 function AO3DownloaderClient:getWorkMetadata(work_id)
     logger.dbg("AO3Downloader.koplugin: Fetching metadata for work ID: " .. tostring(work_id))
-    local url = T("%1/works/%2", getAO3URL(), work_id)
-
-    local response_body = {}
-
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-        cookies = {["view_adult"] = "true" },
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch work metadata. Status: %1", request_result.status or "unknown error");
-        }
+    local work_metadata, err = parsePage(T("%1/works/%2", Config:getAO3Domain(), work_id), "Failed to fetch work metadata.",
+        AO3WebParser.parseWorkPage, { cookies = { ["view_adult"] = "true" } })
+    if work_metadata then
+        work_metadata.id = work_id
+        work_metadata.epub_link = work_metadata.epub_href and Config:getAO3Domain() .. work_metadata.epub_href
+        work_metadata.epub_href = nil
     end
-
-    local body = table.concat(response_body)
-    local html_root = htmlparser.parse(body)
-
-    local work_metadata = AO3WebParser:parseWorkPage(html_root);
-    work_metadata.id = work_id
-
-    return {
-        success = true,
-        work_metadata = work_metadata,
-    }
-
+    return work_metadata, err
 end
 
+-- Returns the filepath written.
 function AO3DownloaderClient:downloadEpub(download_link, filepath)
     logger.dbg("AO3Downloader.koplugin: Downloading EPUB from link: " .. tostring(download_link) .. " to filepath: " .. tostring(filepath))
     if not download_link or not download_link:match("^https?://") then
-        return {
-            success = false,
-            error = T("Invalid or missing URL for EPUB download: %1", tostring(download_link)),
-        }
+        return nil, T("Invalid or missing URL for EPUB download: %1", tostring(download_link))
     end
 
-    local file, err = io.open(filepath, "w")
-    if err then
-        return {
-            success = false,
-            error = T("Failed to open file for writing. Error: %1", tostring(err)),
-        }
+    -- download beside the target so a failed or cancelled download never clobbers an existing EPUB;
+    -- pcall only to delete the partial file, then re-raise so a cancel still unwinds
+    local part_path = filepath .. ".part"
+    local ok, result = pcall(HTTPQueryHandler.get, download_link, {
+        headers = { ["Accept"] = "application/epub+zip" },
+        filepath = part_path,
+    })
+    if not ok then
+        os.remove(part_path)
+        error(result, 0)
     end
 
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Accept"] = "application/epub+zip"
-
-    local request = {
-        url = download_link,
-        headers = headers,
-        sink = socketutil.file_sink(file),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to download EPUB. Status: %1", request_result.status or "unknown error"),
-        }
+    if not result.success then
+        os.remove(part_path)
+        return failure("Failed to download EPUB.", result)
     end
 
-    return {
-        success = true,
-        filepath = filepath,
-    }
+    local renamed, err = os.rename(part_path, filepath)
+    if not renamed then
+        os.remove(part_path)
+        return nil, T("Failed to save EPUB. Error: %1", tostring(err))
+    end
+
+    return filepath
+end
+
+local function listWorks(url, error_message)
+    return parsePage(url, error_message, AO3WebParser.parseWorkSearchResults)
 end
 
 function AO3DownloaderClient:searchByParameters(parameters, page_no)
-    local page = page_no or 1 -- Default to the first page if no page is specified
     logger.dbg("AO3Downloader.koplugin: Executing work search by parameters. Page no: " .. tostring(page_no))
-    local query = {}
-
-    -- Build the query string from the parameters
+    local query = { commit = "Sort and Filter", page = page_no or 1 }
     for key, value in pairs(parameters) do
-        if value == "" then
-            table.insert(query, string.format("%s=", encodeHelper:urlEncode(key))) -- Include empty parameters
-        elseif type(value) == "table" then
-            -- Handle nested parameters (e.g., include_work_search[character_ids][])
-            for _, subValue in ipairs(value) do
-                table.insert(query, string.format("%s=%s", encodeHelper:urlEncode(key), encodeHelper:urlEncode(subValue))) -- Encode [] as %5B%5D
-            end
-        else
-            table.insert(query, string.format("%s=%s", encodeHelper:urlEncode(key), encodeHelper:urlEncode(value)))
-        end
+        query[key] = value
     end
-    table.insert(query, "page=" .. page)
-    local queryString = table.concat(query, "&")
-
-    -- Construct the full URL
-    local url = string.format("%s/works?commit=Sort+and+Filter&%s", getAO3URL(), queryString)
-
-    local response_body = {}
-
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local response_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not response_result.success then
-        return {
-            success = false,
-            error = T("%1/works?commit=Sort+and+Filter&%2", getAO3URL(), queryString)
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
-
-    return {
-        success = true,
-        works = works,
-    }
+    return listWorks(HTTPQueryHandler.withQuery(Config:getAO3Domain() .. "/works", query), "Search request failed.")
 end
 
 function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
-    local page = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
-    local sort_column = sort_by or "revised_at"
-
     local encoded_tag_name = tag_name
         :gsub("/", "*s*")
         :gsub("&", "*a*")
         :gsub("%.", "*d*")
 
-    encoded_tag_name = encodeHelper:urlEncode(encoded_tag_name)
-
-    local AO3URL = Config:readSetting("AO3_domain")
-    local url = T("%1/tags/%2/works?page=%3&work_search[sort_column]=%4", AO3URL, encoded_tag_name, page, sort_column)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Search request failed. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
-
-    return {
-        success = true,
-        result_works = works,
-    }
+    local url = HTTPQueryHandler.withQuery(T("%1/tags/%2/works", Config:getAO3Domain(), HTTPQueryHandler.encode(encoded_tag_name)), {
+        page = page_no or 1,
+        ["work_search[sort_column]"] = sort_by or "revised_at",
+    })
+    return listWorks(url, "Search request failed.")
 end
 
 function AO3DownloaderClient:searchForTags(search_query, tag_type)
     logger.dbg("AO3Downloader.koplugin: Executing tag search for query: " .. tostring(search_query) .. ", tag type: " .. tostring(tag_type))
     if not search_query or search_query == "" then
-        return {
-            success = false,
-            error = "Tag search query cannot be empty"
-        }
+        return nil, "Tag search query cannot be empty"
     end
 
-    tag_type = tag_type or "Fandom"
-
-    local encoded_query = encodeHelper:urlEncode(search_query)
-
-    local url = string.format(
-        "%s/tags/search?tag_search%%5Bname%%5D=%s&tag_search%%5Bfandoms%%5D=&tag_search%%5Btype%%5D=%s&tag_search%%5Bwrangling_status%%5D=canonical&tag_search%%5Bsort_column%%5D=uses&tag_search%%5Bsort_direction%%5D=desc&commit=Search+Tags",
-        getAO3URL(),
-        encoded_query,
-        tag_type
-    )
-
-    local response_body = {}
-
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("HTTP tag search request failed. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local body = table.concat(response_body)
-
-    local html_root = htmlparser.parse(body)
-
-    local fandoms = AO3WebParser:parseTagSearchResults(html_root)
-
-
-    return {
-        success = true,
-        result_tags = fandoms,
-    }
-
+    local url = HTTPQueryHandler.withQuery(Config:getAO3Domain() .. "/tags/search", {
+        ["tag_search[name]"] = search_query,
+        ["tag_search[fandoms]"] = "",
+        ["tag_search[type]"] = tag_type or "Fandom",
+        ["tag_search[wrangling_status]"] = "canonical",
+        ["tag_search[sort_column]"] = "uses",
+        ["tag_search[sort_direction]"] = "desc",
+        commit = "Search Tags",
+    })
+    return parsePage(url, "HTTP tag search request failed.", AO3WebParser.parseTagSearchResults)
 end
 
 function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
     logger.dbg("AO3Downloader.koplugin: Fetching works from series ID: " .. tostring(series_id) .. ", page no: " .. tostring(page_no))
-    page_no = page_no or 1
-    local url = T("%1/series/%2?page=%3", getAO3URL(), series_id, page_no)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch series works. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local works = AO3WebParser:parseWorkSearchResults(root)
-
-    return {
-        success = true,
-        works = works,
-    }
+    return listWorks(T("%1/series/%2?page=%3", Config:getAO3Domain(), series_id, page_no or 1), "Failed to fetch series works.")
 end
 
 function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
     logger.dbg("AO3Downloader.koplugin: Fetching works from collection ID: " .. tostring(collection_id) .. ", page no: " .. tostring(page_no))
-    page_no = page_no or 1
-    local url = T("%1/collections/%2/works?page=%3", getAO3URL(), collection_id, page_no)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch collection works. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local works = AO3WebParser:parseWorkSearchResults(root)
-
-    return {
-        success = true,
-        works = works,
-    }
+    return listWorks(T("%1/collections/%2/works?page=%3", Config:getAO3Domain(), collection_id, page_no or 1), "Failed to fetch collection works.")
 end
 
-function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
+function AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id, page_no)
+    logger.dbg("AO3Downloader.koplugin: Fetching works from user page. Username: " .. tostring(username) .. ", category: " .. tostring(category) .. (fandom_id and (", fandom ID: " .. tostring(fandom_id)) or "") .. ", page no: " .. tostring(page_no))
     local url
-    if catagory == "gifts" then
-        url = T("%1/users/%2/gifts", getAO3URL(), username)
+    if category == "gifts" then
+        url = T("%1/users/%2/gifts", Config:getAO3Domain(), username)
     else
-        url = T("%1/users/%2/pseuds/%3/%4", getAO3URL(), username, pseud, catagory)
+        url = T("%1/users/%2/pseuds/%3/%4", Config:getAO3Domain(), username, pseud, category)
     end
+    url = HTTPQueryHandler.withQuery(url, { fandom_id = fandom_id, page = page_no or 1 })
 
-    page_no = page_no or 1
-
-    logger.dbg("AO3Downloader.koplugin: Fetching works from user page. Username: " .. tostring(username) .. ", category: " .. tostring(catagory) .. (fandom_id and (", fandom ID: " .. tostring(fandom_id)) or "") .. ", page no: " .. tostring(page_no))
-    local parameters = {["fandom_id"] = fandom_id, ["page"] = page_no}
-
-    local parameter_string = table.concat(
-        (function()
-            local parts = {}
-            for key, value in pairs(parameters) do
-                if value then
-                    table.insert(parts, string.format("%s=%s", key, value))
-                end
-            end
-            return parts
-        end)(),
-        "&"
-    )
-
-    url = url .. "?" .. parameter_string
-
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch user works. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local works = nil
-
-    if catagory == "bookmarks" then
-        works = AO3WebParser:parseUserBookmarks(root)
-    else
-         works = AO3WebParser:parseWorkSearchResults(root)
-    end
-
-    return {
-        success = true,
-        works = works,
-    }
-
+    local parse = category == "bookmarks" and AO3WebParser.parseUserBookmarks or AO3WebParser.parseWorkSearchResults
+    return parsePage(url, "Failed to fetch user works.", parse)
 end
 
 function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_no)
-
-    local login_status = self:GetSessionStatus()
-
-    if not login_status.success or not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User is not logged in. Please log in to access " .. (marked_for_later and "marked for later list." or "account history.")),
-        }
+    local session, err = requireLogin(marked_for_later and "access the marked for later list" or "access account history")
+    if not session then
+        return nil, err
     end
 
-    local username = login_status.username
-
-    local url
-
-    url = T("%1/users/%2/readings", getAO3URL(), username)
-
-    page_no = page_no or 1
-
-    logger.dbg("AO3Downloader.koplugin: Fetching works from account history page. Username: " .. tostring(username) .. ", page no: " .. tostring(page_no))
-    local parameters = {["show"] = marked_for_later and "to-read" or "",["page"] = page_no}
-
-    local parameter_string = table.concat(
-        (function()
-            local parts = {}
-            for key, value in pairs(parameters) do
-                if value then
-                    table.insert(parts, string.format("%s=%s", key, value))
-                end
-            end
-            return parts
-        end)(),
-        "&"
-    )
-
-    url = url .. "?" .. parameter_string
-
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch account history. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local works = nil
-
-    works = AO3WebParser:parseAccountHistory(root)
-
-    return {
-        success = true,
-        works = works,
-    }
-
+    logger.dbg("AO3Downloader.koplugin: Fetching works from account history page. Username: " .. tostring(session.username) .. ", page no: " .. tostring(page_no))
+    local url = HTTPQueryHandler.withQuery(T("%1/users/%2/readings", Config:getAO3Domain(), session.username), {
+        show = marked_for_later and "to-read" or "",
+        page = page_no or 1,
+    })
+    return parsePage(url, "Failed to fetch account history.", AO3WebParser.parseAccountHistory)
 end
 
 function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
-    page_no = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
-    local url = T("%1/users/%2/pseuds/%3/series?page=%4", getAO3URL(), username, pseud, page_no)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch user series. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local series = AO3WebParser:parseUserSeriesPage(root)
-
-    return {
-        success = true,
-        series = series,
-    }
+    return parsePage(T("%1/users/%2/pseuds/%3/series?page=%4", Config:getAO3Domain(), username, pseud, page_no or 1),
+        "Failed to fetch user series.", AO3WebParser.parseUserSeriesPage)
 end
 
 function AO3DownloaderClient:getUserCollections(username, page_no)
-    page_no = page_no or 1
     logger.dbg("AO3Downloader.koplugin: Fetching collections for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
-    local url = T("%1/users/%2/collections?page=%3", getAO3URL(), username, page_no)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch user collections. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-
-    local collections = AO3WebParser:parseUserCollectionsPage(root)
-
-    return {
-        success = true,
-        collections = collections,
-    }
+    return parsePage(T("%1/users/%2/collections?page=%3", Config:getAO3Domain(), username, page_no or 1),
+        "Failed to fetch user collections.", AO3WebParser.parseUserCollectionsPage)
 end
 
 function AO3DownloaderClient:getUserData(username, pseud)
-    local url = T("%1/users/%2/pseuds/%3", getAO3URL(),username, pseud)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if request_result.status == 404 then
-        return {
-            success = false,
-            error = T("User '%1' not found.", username),
-        }
+    local user_data, err = parsePage(T("%1/users/%2/pseuds/%3", Config:getAO3Domain(), username, pseud),
+        "Failed to fetch user data.", AO3WebParser.parseUserPage, { not_found = T("User '%1' not found.", username) })
+    if user_data then
+        user_data.username = username
     end
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch user data. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-
-    local html_body = table.concat(response_body)
-
-    local root = htmlparser.parse(html_body)
-    local user_data = AO3WebParser:parseUserPage(root)
-    user_data.username = username
-
-    return {
-        success = true,
-        user_data = user_data,
-    }
-
+    return user_data, err
 end
 
 function AO3DownloaderClient:getUserPseuds(username)
-    local url = T("%1/users/%2/pseuds", getAO3URL(), username)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if request_result.status == 404 then
-        return {
-            success = false,
-            error = T("User '%1' not found.", username),
-        }
-    end
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch user pseuds. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-    local root = htmlparser.parse(html_body)
-    local pseuds = AO3WebParser:parseUserPseuds(root)
-
-    return {
-        success = true,
-        pseuds = pseuds,
-    }
+    return parsePage(T("%1/users/%2/pseuds", Config:getAO3Domain(), username),
+        "Failed to fetch user pseuds.", AO3WebParser.parseUserPseuds, { not_found = T("User '%1' not found.", username) })
 end
 
 function AO3DownloaderClient:getAccountPseudID(username)
-    local url = T("%1/users/%2/pseuds/%2/edit", getAO3URL(), username)
-
-    local response_body = {}
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if request_result.status == 404 then
-        return {
-            success = false,
-            error = T("Pseud edit page for '%1' not found.", username),
-        }
+    local pseud_id, err = parsePage(T("%1/users/%2/pseuds/%2/edit", Config:getAO3Domain(), username),
+        "Failed to fetch account pseud ID.", AO3WebParser.parseAccountPseudID,
+        { not_found = T("Pseud edit page for '%1' not found.", username) })
+    if pseud_id == false then
+        return nil, "Failed to parse account pseud ID"
     end
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch accound pseud ID. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-    local root = htmlparser.parse(html_body)
-    local pseud_id = AO3WebParser:parseAccountPseudID(root)
-
-    if not pseud_id then
-        return {
-            success = false,
-            error = T("Failed to parse accound pseud ID"),
-        }
-    end
-
-    return {
-        success = true,
-        pseud_id = pseud_id,
-    }
+    return pseud_id, err
 end
 
 function AO3DownloaderClient:searchForUsers(search_query, page_no)
     logger.dbg("AO3Downloader.koplugin: Executing user search for query: " .. tostring(search_query) .. ", page no: " .. tostring(page_no))
     if not search_query or search_query == "" then
-        return {
-            success = false,
-            error = "User search query cannot be empty"
-        }
+        return nil, "User search query cannot be empty"
     end
 
-    page_no = page_no or 1
-
-    local encoded_query = encodeHelper:urlEncode(search_query)
-
-    local url = string.format(
-        "%s/people/search?people_search%%5Bquery%%5D=%s&page=%d",
-        getAO3URL(),
-        encoded_query,
-        page_no
-    )
-
-    local response_body = {}
-
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("HTTP user search request failed. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local body = table.concat(response_body)
-    local html_root = htmlparser.parse(body)
-
-    local users = AO3WebParser:parseUserSearchResults(html_root)
-
-    return {
-        success = true,
-        result_users = users,
-    }
+    local url = HTTPQueryHandler.withQuery(Config:getAO3Domain() .. "/people/search", {
+        ["people_search[query]"] = search_query,
+        page = page_no or 1,
+    })
+    return parsePage(url, "HTTP user search request failed.", AO3WebParser.parseUserSearchResults)
 end
 
 function AO3DownloaderClient:searchForCollections(search_query)
     logger.dbg("AO3Downloader.koplugin: Executing collection search for query: " .. tostring(search_query))
-    if (not search_query or search_query == "") then
-        return {
-            success = false,
-            error = "Collection search query cannot be empty"
-        }
+    if not search_query or search_query == "" then
+        return nil, "Collection search query cannot be empty"
     end
 
-    local encoded_query = encodeHelper:urlEncode(search_query)
-
-    local url = string.format(
-        "%s/autocomplete/collection_title?term=%s",
-        getAO3URL(),
-        encoded_query
-    )
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-    headers["X-Requested-With"] = "XMLHttpRequest"
-    headers["Accept-Encoding"] = nil
-
-    local request = {
-        url = url,
-        method = "GET",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("HTTP collection search request failed. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    local results = table.concat(response_body)
-    local json = require("dkjson")
-    local success, collection_results = pcall(json.decode, results)
-
-    if not success then
-        return {
-            success = false,
-            error = T("Failed to parse collection search results."),
-        }
-    end
-
-    return {
-        success = true,
-        collections = collection_results,
-    }
-
+    local url = HTTPQueryHandler.withQuery(Config:getAO3Domain() .. "/autocomplete/collection_title", { term = search_query })
+    return getJSON(url, "HTTP collection search request failed.")
 end
 
 function AO3DownloaderClient:kudosWork(work_id)
     logger.dbg("AO3Downloader.koplugin: Sending kudos to work. Work ID: " .. tostring(work_id))
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLoginToken("kudos works")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to kudos works."),
-        }
-    end
-
-    local authenticity_token_request = self:requestAO3Token()
-
-    if not authenticity_token_request.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token for kudos: %1", authenticity_token_request.error or "unknown error"),
-        }
-    end
-
-    local authenticity_token = authenticity_token_request.token
-
-    local kudos_url = T("%1/kudos.js", getAO3URL())
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    local form_data = encodeHelper:generateParametersStringForm({
-        ["authenticity_token"] = authenticity_token,
+    local result
+    result, err = postAction(Config:getAO3Domain() .. "/kudos.js", {
+        ["authenticity_token"] = session.token,
         ["kudo[commentable_id]"] = tostring(work_id),
         ["kudo[commentable_type]"] = "Work",
-    })
-    headers["Content-Length"] = tostring(#form_data)
-
-
-    local request = {
-        url = kudos_url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if request_result.status == 201 then
-        return {
-            success = true,
-        }
+    }, { 201, 422 }, "Failed to kudos work.")
+    if not result then
+        return nil, err
     end
-
-    if request_result.status == 422 then
-        return {
-            success = false,
-            error = T("You have already left kudos here. :)"),
-        }
+    if result.status == 422 then
+        return nil, "You have already left kudos here. :)"
     end
-
-    return {
-        success = false,
-        error = T("Failed to kudos work. Status: %1", request_result.status or "unknown error"),
-    }
+    return true
 end
 
 function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     logger.dbg("AO3Downloader.koplugin: Posting comment on work. Work ID: " .. tostring(work_id) .. ", chapter ID: " .. tostring(chapter_id))
 
     if not comment_content or comment_content == "" then
-        return {
-            success = false,
-            error = T("Comment content cannot be empty."),
-        }
+        return nil, "Comment content cannot be empty."
     end
-
     if comment_content:len() > 10000 then
-        return {
-            success = false,
-            error = T("Comment content exceeds maximum length of 10,000 characters."),
-        }
+        return nil, "Comment content exceeds maximum length of 10,000 characters."
     end
 
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLogin("comment on works")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to comment on works."),
-        }
-    end
-
-    local comment_url = getAO3URL()
+    local comment_url = Config:getAO3Domain()
         .. ((chapter_id and ("/chapters/" .. chapter_id)) or ("/works/" .. work_id))
         .. "/comments"
 
-    local response_body = {}
-
-    local request = {
-        url = comment_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-        cookies = { ["view_adult"] = "true"}
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch comment comment form. Status: %1", request_result.status or "unknown error"),
-        }
+    local root
+    root, err = getPage(comment_url, "Failed to fetch comment form.", { cookies = { ["view_adult"] = "true" } })
+    if not root then
+        return nil, err
     end
 
-
-    local body = table.concat(response_body)
-    local html_root = htmlparser.parse(body)
-
-    local form = html_root:select("#comment_for_" .. (chapter_id or work_id))[1]
-    local authenticity_token = form and form:select("[name='authenticity_token']")[1].attributes["value"]
-    local pseud_id = form and form:select("[name='comment[pseud_id]']")[1].attributes["value"]
-
-    if not authenticity_token or not pseud_id then
-        return {
-            success = false,
-            error = T("Failed to retrieve necessary tokens for commenting from comment form."),
-        }
+    local form = root:select("#comment_for_" .. (chapter_id or work_id))[1]
+    local token_input = form and form:select("[name='authenticity_token']")[1]
+    local pseud_input = form and form:select("[name='comment[pseud_id]']")[1]
+    if not token_input or not pseud_input then
+        return nil, "Failed to retrieve necessary tokens for commenting from comment form."
     end
 
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-    headers["Referer"] = comment_url
-
-    local custom_cookies = {
-        ["user_credentials"] = "1",
-        ["view_adult"] = "true",
-    }
-
-    local form_data  = encodeHelper:generateParametersStringForm({
-        ["authenticity_token"] = authenticity_token,
-        ["comment[pseud_id]"] = pseud_id,
+    local result
+    result, err = postAction(comment_url, {
+        ["authenticity_token"] = token_input.attributes["value"],
+        ["comment[pseud_id]"] = pseud_input.attributes["value"],
         ["comment[comment_content]"] = comment_content,
         ["controller_name"] = "comments",
         ["commit"] = "Comment",
+    }, { 200, 201, 302 }, "Failed to post comment.", {
+        headers = { ["Referer"] = comment_url },
+        cookies = { ["user_credentials"] = "1", ["view_adult"] = "true" },
     })
-
-    headers["Content-Length"] = tostring(#form_data)
-
-    local request = {
-        url = comment_url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-        cookies = custom_cookies,
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
-        }
-    end
-
-    if request_result.response == 1 then
-        return {
-            success = true,
-        }
-    end
-
-    return {
-        success = false;
-        error = T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
-    }
+    return result and true, err
 end
 
+-- later_or_read: true marks as read, false marks for later.
 function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
     logger.dbg("AO3Downloader.koplugin: Marking work. Work ID: " .. tostring(work_id))
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLoginToken("mark work")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to mark work."),
-        }
-    end
-
-    local authenticity_token_request = self:requestAO3Token()
-
-    if not authenticity_token_request.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token for marking work: %1", authenticity_token_request.error or "unknown error"),
-        }
-    end
-
-    local authenticity_token = authenticity_token_request.token
-
-    -- Mark As Read True, Mark For Later False
-    local kudos_url = T("%1/works/%2/%3", getAO3URL(), work_id, later_or_read and "mark_as_read" or "mark_for_later")
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    local form_data = encodeHelper:generateParametersStringForm({
-        ["authenticity_token"] = authenticity_token,
-        ["_method"] = "patch"
-    })
-    headers["Content-Length"] = tostring(#form_data)
-
-
-    local request = {
-        url = kudos_url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if request_result.status == 302 then
-        return {
-            success = true,
-        }
-    end
-
-    return {
-        success = false,
-        error = T("Failed to mark work. Status: %1", request_result.status or "unknown error"),
-    }
+    local url = T("%1/works/%2/%3", Config:getAO3Domain(), work_id, later_or_read and "mark_as_read" or "mark_for_later")
+    local result
+    result, err = postAction(url, {
+        ["authenticity_token"] = session.token,
+        ["_method"] = "patch",
+    }, { 302 }, "Failed to mark work.")
+    return result and true, err
 end
 
+-- Subscribes, or unsubscribes when subscription_id is given; returns { subscription_id } (nil once unsubscribed).
 function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
     logger.dbg("AO3Downloader.koplugin: Setting subscription. Work ID: " .. tostring(work_id))
-
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLoginToken("subscribe")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to subscribe."),
-        }
-    end
-
-    local token_request = self:requestAO3Token()
-    if not token_request.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
-        }
-    end
-
-    local authenticity_token = token_request.token
-
-    local url
-    local form
-
-    if not subscription_id then
-        url = T("%1/users/%2/subscriptions", getAO3URL(), login_status.username)
-
-        form = encodeHelper:generateParametersStringForm({
-            ["authenticity_token"] = authenticity_token,
-            ["subscription[subscribable_id]"] = tostring(work_id),
-            ["subscription[subscribable_type]"] = "Work",
-        })
-    else
-        if not subscription_id then
-            return {
-                success = false,
-                error = T("Subscription ID required to unsubscribe."),
-            }
-        end
-
-        url = T("%1/users/%2/subscriptions/%3",
-            getAO3URL(),
-            login_status.username,
-            subscription_id
-        )
-
-        form = encodeHelper:generateParametersStringForm({
-            ["authenticity_token"] = authenticity_token,
-            ["_method"] = "delete",
-            ["subscription[subscribable_id]"] = tostring(work_id),
-            ["subscription[subscribable_type]"] = "Work",
-        })
-    end
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-    headers["Content-Length"] = tostring(#form)
-    headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-    headers["X-Requested-With"] = "XMLHttpRequest"
-    headers["X-CSRF-Token"] = authenticity_token
-
-    local request = {
-        url = url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form),
+    local url = T("%1/users/%2/subscriptions", Config:getAO3Domain(), session.username)
+    local form = {
+        ["authenticity_token"] = session.token,
+        ["subscription[subscribable_id]"] = tostring(work_id),
+        ["subscription[subscribable_type]"] = "Work",
     }
-
-    local result = HTTPQueryHandler:performHTTPRequest(request)
-
-    local response_text = table.concat(response_body)
-
-    if result.status == 201 then
-        local json = require("dkjson")
-        local decoded, _, err = json.decode(response_text)
-
-        if decoded then
-            return {
-                success = true,
-                subscription_id = tostring(decoded.item_id),
-            }
-        end
-
-        return {
-            success = true,
-        }
-    end
-    if result.status == 302 or result.status == 200 then
-        return {
-            success = true
-        }
+    if subscription_id then
+        url = url .. "/" .. subscription_id
+        form["_method"] = "delete"
     end
 
-    return {
-        success = false,
-        error = T("Failed to update subscription. Status: %1", result.status or "unknown error"),
-    }
+    local result, body = postAction(url, form, { 201, 302, 200 }, "Failed to update subscription.",
+        { json = true, headers = { ["X-CSRF-Token"] = session.token } })
+    if not result then
+        return nil, body
+    end
+
+    local decoded = result.status == 201 and json.decode(body)
+    return { subscription_id = decoded and tostring(decoded.item_id) or nil }
 end
 
+-- Returns { bookmark_id, data }, or {} when the user hasn't bookmarked the work.
 function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     logger.dbg("AO3Downloader.koplugin: Fetching bookmark for work. Work ID: " .. tostring(work_id))
-
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLogin("fetch bookmarks")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to fetch bookmarks."),
-        }
+    local work_root
+    work_root, err = getPage(T("%1/works/%2/bookmarks", Config:getAO3Domain(), work_id), "Failed to fetch bookmark.")
+    if not work_root then
+        return nil, err
     end
 
-    local url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
-
-    local response_body = {}
-
-    local request = {
-        url = url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch bookmark. Status: %1", result.status or "unknown error"),
-        }
+    local trigger = work_root:select("a.bookmark_form_trigger_for_" .. work_id)[1]
+    if not trigger then
+        return nil, T("Bookmark button not found for work ID: %1", work_id)
+    end
+    if trigger:getcontent() ~= "Edit Bookmark" then
+        return {}
     end
 
-    local html_body = table.concat(response_body)
-    local root = htmlparser.parse(html_body)
-
-
-    local bookmark_trigger_button = root:select("a.bookmark_form_trigger_for_" .. work_id)[1]
-    if not bookmark_trigger_button  and bookmark_trigger_button:getcontent() ~= "Edit Bookmark" then
-        return {
-            success = false,
-            error = T("Bookmark not found from this user for work ID: %1", work_id),
-        }
+    local href = trigger.attributes["href"]
+    local data
+    data, err = parsePage(Config:getAO3Domain() .. href, "Failed to fetch bookmark form.", AO3WebParser.parseUsersWorkBookmark)
+    if not data then
+        return nil, err
     end
-
-    local bookmark_form_url = T("%1%2", getAO3URL(), bookmark_trigger_button.attributes["href"])
-
-    local request = {
-        url = bookmark_form_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-    }
-
-    local result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not result.success then
-        return {
-            success = false,
-            error = T("Failed to fetch bookmark form. Status: %1", result.status or "unknown error"),
-        }
-    end
-
-    local html_body = table.concat(response_body)
-    logger.dbg("AO3Downloader.koplugin: Bookmark form response body: " .. tostring(html_body))
-    -- look foor bookmark_div.html("...") and parse html
-
-    local root = htmlparser.parse(html_body)
-
-    local bookmark_data = AO3WebParser:parseUsersWorkBookmark(root)
-
-    return {
-        success = true,
-        bookmark_data = bookmark_data,
-        bookmark_id = bookmark_trigger_button.attributes["href"]:match("/bookmarks/(%d+)/edit")
-    }
+    return { bookmark_id = href:match("/bookmarks/(%d+)/edit"), data = data }
 end
 
+-- Creates the bookmark, or updates it when bookmark_id is given; returns { bookmark_id }.
 function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
     logger.dbg("AO3Downloader.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
-
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLoginToken("edit bookmarks")
+    if not session then
+        return nil, err
     end
-
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to edit bookmarks."),
-        }
-    end
-
-    local token_request = self:requestAO3Token()
-    if not token_request.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
-        }
-    end
-
-    local authenticity_token = token_request.token
 
     local url
-    local form_data = {
-        ["authenticity_token"] = authenticity_token,
+    local form = {
+        ["authenticity_token"] = session.token,
         ["bookmark[bookmarker_notes]"] = notes or "",
         ["bookmark[tag_string]"] = tags or "",
         ["bookmark[collection_names]"] = collections or "",
@@ -1561,1275 +530,48 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
     }
 
     if bookmark_id then
-        url = T("%1/bookmarks/%2", getAO3URL(), bookmark_id)
-        form_data["_method"] = "put"
-        form_data["commit"] = "Update"
+        url = T("%1/bookmarks/%2", Config:getAO3Domain(), bookmark_id)
+        form["_method"] = "put"
+        form["commit"] = "Update"
     else
-        url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
-        form_data["commit"] = "Create"
-
-        local pseud_result = AO3DownloaderClient:getAccountPseudID(login_status.username)
-
-        if not pseud_result.success then
-            return {
-                success = false,
-                error = T("Error: %1", pseud_result.error)
-            }
+        url = T("%1/works/%2/bookmarks", Config:getAO3Domain(), work_id)
+        form["commit"] = "Create"
+        local pseud_id
+        pseud_id, err = self:getAccountPseudID(session.username)
+        if not pseud_id then
+            return nil, T("Error: %1", err)
         end
-
-        form_data["bookmark[pseud_id]"] = tostring(pseud_result.pseud_id)
+        form["bookmark[pseud_id]"] = tostring(pseud_id)
     end
 
-    local form = encodeHelper:generateParametersStringForm(form_data)
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-    headers["Content-Length"] = tostring(#form)
-    headers["X-CSRF-Token"] = authenticity_token
-
-    local request = {
-        url = url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form),
-    }
-
-    local result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if result.status == 302 or result.status == 200 then
-        local body_content = table.concat(response_body)
-        local root = htmlparser.parse(body_content)
-
-        if (root:select("div.#error") and #root:select("div.#error") > 0) then
-            local error_message = root:select("div.#error")[1]:getcontent()
-            -- remove htmml tags from error message and convert code points eg &#39; to characters
-            error_message = error_message:gsub("<[^>]+>", "")
-            error_message = encodeHelper:unescapeText(error_message)
-
-            return {
-                success = false,
-                error = T("Failed to update bookmark. Error message: %1", error_message or "unknown error"),
-            }
-        end
-
-        return {
-            success = true,
-            bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
-        }
+    local result, body = postAction(url, form, { 302, 200 }, "Failed to update bookmark.",
+        { headers = { ["X-CSRF-Token"] = session.token } })
+    if not result then
+        return nil, body
     end
 
-    return {
-        success = false,
-        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
-    }
+    local error_message = AO3WebParser.parseFormError(htmlparser.parse(body))
+    if error_message then
+        return nil, T("Failed to update bookmark. Error message: %1", error_message)
+    end
+
+    local location = result.response_headers and result.response_headers["location"]
+    return { bookmark_id = location and location:match("/bookmarks/(%d+)") }
 end
 
 function AO3DownloaderClient:deleteBookmark(bookmark_id)
     logger.dbg("AO3Downloader.koplugin: Deleting bookmark. Bookmark ID: " .. tostring(bookmark_id))
-
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
+    local session, err = requireLoginToken("delete bookmarks")
+    if not session then
+        return nil, err
     end
 
-    if not login_status.logged_in then
-        return {
-            success = false,
-            error = T("User must be logged in to delete bookmarks."),
-        }
-    end
-
-    local token_request = self:requestAO3Token()
-    if not token_request.success then
-        return {
-            success = false,
-            error = T("Failed to retrieve AO3 token: %1", token_request.error or "unknown error"),
-        }
-    end
-
-    local authenticity_token = token_request.token
-
-    local url = T("%1/bookmarks/%2", getAO3URL(), bookmark_id)
-    local form_data = {
-        ["authenticity_token"] = authenticity_token,
-        ["_method"] = "delete"
-    }
-
-    local form = encodeHelper:generateParametersStringForm(form_data)
-
-    local response_body = {}
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-    headers["Content-Length"] = tostring(#form)
-    headers["X-CSRF-Token"] = authenticity_token
-
-    local request = {
-        url = url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form),
-    }
-
-    local result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if result.status == 302 then
-        return {
-            success = true,
-        }
-    end
-
-    return {
-        success = false,
-        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
-    }
-end
-
-
--- AO3WebParser
-function AO3WebParser:parseWorkSearchResults(root)
-    local works = {}
-    local elements = root:select("li.work")
-
-    local count = 1
-
-    local resultsCountElement = root:select("#main > h3")[1]
-    if resultsCountElement then
-        local resultsText = resultsCountElement:getcontent()
-        local totalWorks = resultsText:match("^%s*([%d,]+) Found")
-        if totalWorks then
-            totalWorks = tonumber(totalWorks:gsub(",", ""), 10)
-            works["total"] = totalWorks
-        end
-    end
-
-    if not works["total"] then
-        local resultsCountElement = root:select("#main > h2")[1]
-        if resultsCountElement then
-            local resultsText = resultsCountElement:getcontent()
-            local totalWorks = resultsText:match("of%s*([%d,]+)%s*Works")
-            if not totalWorks then
-                totalWorks = resultsText:match("^%s*([%d,]+)%s*Works")
-            end
-            if totalWorks then
-                totalWorks = totalWorks:gsub(",", "")
-                works["total"] = tonumber(totalWorks)
-            end
-        end
-    end
-
-
-    for _, element in ipairs(elements) do
-        local work = self:parseWorkElement(element)
-        if work then
-            table.insert(works, count, work)
-            count = count + 1
-        end
-    end
-
-    return works
-end
-
-function AO3WebParser:parseUserBookmarks(root)
-    local bookmarks = {}
-    local elements = root:select("li.bookmark")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        -- Check if bookmark is for deleted fic, if so, set title accordingly
-        local deletedElement = element:select(".message")[1]
-        if deletedElement and deletedElement:getcontent():find("This has been deleted, sorry!") then
-            local work = {}
-            work.title = "Deleted Work"
-            work.id = nil
-            work.is_deleted = true
-            table.insert(bookmarks, count, work)
-            count = count + 1
-
-        else
-            local work = self:parseWorkElement(element)
-            if work then
-                table.insert(bookmarks, count, work)
-                count = count + 1
-            end
-        end
-    end
-
-    return bookmarks
-
-end
-
-function AO3WebParser:parseUserSeriesPage(root)
-    local series_list = {}
-    local elements = root:select("li.series")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        local titleElement = element:select(".heading > a")[1]
-        if titleElement then
-            local href = titleElement.attributes.href
-            local id = tonumber(href:match("/series/(%d+)"))
-            local title = titleElement:getcontent()
-
-            local authorElement = element:select(".heading > a[rel='author']")[1]
-            local author = authorElement and encodeHelper:parseToCodepoints(authorElement:getcontent()) or nil
-
-            local dateElement = element:select(".datetime")[1]
-
-            local date_posted = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or ""
-
-            local fandomElements = element:select(".fandoms > a")
-            local fandoms = {}
-            for _, fandomElement in pairs(fandomElements) do
-                local content = fandomElement:getcontent()
-                if content then
-                    table.insert(fandoms, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local warningElements = element:select(".warnings > strong > a")
-
-            local warnings = {}
-
-            for _, warningElement in pairs(warningElements) do
-                local content = warningElement:getcontent()
-                if content then
-                    table.insert(warnings, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local relationshipsElements = element:select(".relationships > a")
-            local relationships = {}
-            for _, relationshipElement in pairs(relationshipsElements) do
-                local content = relationshipElement:getcontent()
-                if content then
-                    table.insert(relationships, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local charactersElements = element:select(".characters > a")
-            local characters = {}
-
-            for _, characterElement in pairs(charactersElements) do
-                local content = characterElement:getcontent()
-                if content then
-                    table.insert(characters, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local otherTagsElements = element:select(".freeforms > a")
-            local other_tags = {}
-
-            for _, otherTagElement in pairs(otherTagsElements) do
-                local content = otherTagElement:getcontent()
-                if content then
-                    table.insert(other_tags, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local summaryElement = element:select(".summary")[1]
-            local summary = summaryElement and encodeHelper:parseFromHTML(summaryElement:getcontent())
-
-            local wordCountElement = element:select("dd.words")[1]
-            logger.dbg(wordCountElement and wordCountElement:getcontent():gsub(",", "") or "No word count element found")
-            local word_count = wordCountElement and tonumber(wordCountElement:getcontent():gsub(",", ""), 10) or 0
-
-            local workCountElement = element:select("dd.works")[1]
-            local work_count = workCountElement and tonumber(workCountElement:getcontent():gsub(",", ""), 10) or 0
-
-            local bookmark_countElement = element:select("dd.bookmarks")[1]
-            local bookmark_count = bookmark_countElement and tonumber(bookmark_countElement:getcontent():gsub(",", ""), 10) or 0
-
-            local series = {
-                id = id,
-                title = title,
-                author = author,
-                date_posted = date_posted,
-                fandoms = fandoms,
-                warnings = warnings,
-                relationships = relationships,
-                characters = characters,
-                tags = other_tags,
-                summary = summary,
-                word_count = word_count,
-                work_count = work_count,
-                bookmark_count = bookmark_count,
-            }
-
-            table.insert(series_list, count, series)
-            count = count + 1
-        end
-    end
-
-    return series_list
-end
-
-function AO3WebParser:parseUserCollectionsPage(root)
-    local collection_list = {}
-    local elements = root:select("li.collection")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        local titleElement = element:select(".heading > a:not([class])")[1]
-        if titleElement then
-
-            --works
-            --bookmarked items
-            --prompts
-            --challenges/subcollections
-
-            local href = titleElement.attributes.href
-            local id = href:match("/collections/([%w_-]+)")
-            local title = titleElement:getcontent()
-
-            local authorElements = element:select(".heading > a.owner")
-            local author_table = {}
-            for _, author in pairs(authorElements) do
-                table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
-            end
-            authorElements = element:select(".heading > a.mod")
-            for _, author in pairs(authorElements) do
-                table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
-            end
-            local author = #author_table > 0 and table.concat(author_table, ", ") or nil
-
-            local dateElement = element:select(".datetime")[1]
-
-            local date_posted = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or ""
-
-            local tagElements = element:select(".tags > a.tag")
-            local tags = {}
-
-            for _, tagElement in pairs(tagElements) do
-                local content = tagElement:getcontent()
-                if content then
-                    table.insert(tags, encodeHelper:parseToCodepoints(content))
-                end
-            end
-
-            local typeElement = element:select("p.type")[1]
-            local type = typeElement:getcontent():gsub("^%s*(.-)%s*$", "%1")
-
-            local summaryElement = element:select(".summary")[1]
-            local summary = (type and (type.." ") or "") .. (summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
-                :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
-                :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
-                :gsub("<[^>]+>", "") -- Remove other HTML tags
-                :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
-            ))
-
-            local workCountElement = element:select("dd.works > a")[1]
-            local work_count = workCountElement and tonumber(workCountElement:getcontent():gsub(",", ""), 10) or 0
-
-            local collection = {
-                id = id,
-                title = title,
-                author = author,
-                date_posted = date_posted,
-                tags = tags,
-                summary = summary,
-                work_count = work_count,
-            }
-
-            table.insert(collection_list, count, collection)
-            count = count + 1
-        end
-    end
-
-    return collection_list
-end
-
-function AO3WebParser:parseAccountHistory(root)
-    local works = {}
-    local elements = root:select("li.work")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        local work = self:parseWorkElement(element)
-        if work then
-            table.insert(works, count, work)
-            count = count + 1
-        end
-    end
-
-    works["total"] = -1
-
-    return works
-end
-
-function AO3WebParser:parseWorkElement(element)
-    local titleElement = element:select("h4.heading > a")[1] or element:select("h4.heading")[1]
-    local restrictedElement = element:select("img[title='Restricted']")[1]
-    local authorElements = element:select(".heading > a[rel='author']")
-    local giftElements = element:select(".heading > a[href$='/gifts']")
-    local summaryElement = element:select(".summary")[1]
-    local tagsElement = element:select(".tags > .freeforms")
-    local relationshipsElement = element:select(".tags > .relationships")
-    local charactersElement = element:select(".tags > .characters")
-    local warningsElement = element:select(".tags > .warnings")
-    local fandomsElement = element:select(".fandoms")[1]
-    local dateElement = element:select(".datetime")[1]
-    local languageElement = element:select("dd.language")[1]
-    local wordsElement = element:select("dd.words")[1]
-    local chaptersElement = element:select("dd.chapters")[1]
-    local hitsElement = element:select("dd.hits")[1]
-    local commentsElement = element:select("dd.comments")[1]
-    local kudosElement = element:select("dd.kudos")[1]
-    local bookmarksElement = element:select("dd.bookmarks")[1]
-    local ratingElement = element:select(".rating")[1]
-    local categoryElement = element:select(".category")[1]
-    local iswipElement = element:select(".iswip")[1]
-
-    if titleElement then
-        -- Extract the work ID from the href attribute
-        local href = titleElement.attributes.href or ""
-        local id = tonumber(href:match("/works/(%d+)")) -- Extract the numeric ID and convert to number
-        local isRestricted = restrictedElement and true or false -- Set to true if restrictedElement exists, otherwise false
-
-        -- Extract and clean tags
-        local tags = {}
-        if tagsElement then
-            for __, tagset in ipairs(tagsElement) do
-                for _, tag in ipairs(tagset:select("a")) do
-                    local content = encodeHelper:parseToCodepoints(tag:getcontent())
-                    if content then
-                        table.insert(tags, content)
-                    end
-                end
-            end
-        end
-
-        -- Extract and clean relationships
-        local relationships = {}
-        if relationshipsElement then
-            for __, relationshipset in ipairs(relationshipsElement) do
-                for _, relationship in ipairs(relationshipset:select("a")) do
-                    local content = encodeHelper:parseToCodepoints(relationship:getcontent())
-                    if content then
-                        table.insert(relationships, content)
-                    end
-                end
-            end
-        end
-
-        -- Extract and clean characters
-        local characters = {}
-        if charactersElement then
-            for __, characterset in ipairs(charactersElement) do
-                for _, character in ipairs(characterset:select("a")) do
-                    local content = encodeHelper:parseToCodepoints(character:getcontent())
-                    if content then
-                        table.insert(characters, content)
-                    end
-                end
-            end
-        end
-
-        -- Extract and clean warnings
-        local warnings = {}
-        if warningsElement then
-            for __, warningset in ipairs(warningsElement) do
-                for _, warning in ipairs(warningset:select("strong > a")) do
-                    local content = encodeHelper:parseToCodepoints(warning:getcontent())
-                    if content then
-                        table.insert(warnings, content)
-                    end
-                end
-            end
-        end
-
-        -- Extract and clean fandoms
-        local fandoms = {}
-        if fandomsElement then
-            for _, fandom in ipairs(fandomsElement:select("a")) do
-                local content = encodeHelper:parseToCodepoints(fandom:getcontent())
-                if content then
-                    table.insert(fandoms, content)
-                end
-            end
-        end
-
-        -- Extract additional metadata
-        local date = dateElement and encodeHelper:parseToCodepoints(dateElement:getcontent()) or "N/A"
-        local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent()) or "N/A"
-        local words = wordsElement and encodeHelper:parseToCodepoints(wordsElement:getcontent()) or "N/A"
-        local chapters = chaptersElement and encodeHelper:parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
-            or "N/A"
-        local hits = hitsElement and encodeHelper:parseToCodepoints(hitsElement:getcontent():gsub("<[^>]+>", "")) or "0"
-        local comments = commentsElement and encodeHelper:parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", ""))
-            or "0"
-        local kudos = kudosElement and encodeHelper:parseToCodepoints(kudosElement:getcontent():gsub("<[^>]+>", "")) or "0"
-        local bookmarks = bookmarksElement and encodeHelper:parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", ""))
-            or "0"
-        local rating = ratingElement and ratingElement.attributes["title"] or "N/A"
-        local category = categoryElement and categoryElement.attributes["title"] or "N/A"
-        local iswip = iswipElement and iswipElement.attributes["title"] or "N/A"
-        local author_table = {}
-        for _, author in pairs(authorElements) do
-            table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
-        end
-
-        local author = #authorElements > 0 and table.concat(author_table, ", ") or nil
-
-        local giftedTo_table = {}
-        for _, gift in pairs(giftElements) do
-            table.insert(giftedTo_table, encodeHelper:parseToCodepoints(gift:getcontent()))
-        end
-
-        local gifted_to = #giftElements > 0 and table.concat(giftedTo_table, ", ") or nil
-        local tags = #tags > 0 and table.concat(tags, ", ") or "N/A"
-
-        -- Remove HTML formatting, replace <br> with new lines, and preserve paragraph formatting
-        local summary = summaryElement
-            and encodeHelper:parseFromHTML(summaryElement:getcontent())
-            or "No summary available"
-
-        -- Remove leading and trailing whitespace from the title
-        local title = titleElement
-            and encodeHelper:parseToCodepoints(titleElement:getcontent():gsub("<[^>]+>", ""):gsub("^%s*(.-)%s*$", "%1"))
-            or "Unknown title" -- Trim whitespace and remove internal tags
-
-        -- Create the work object
-        local work = {
-            id = id,
-            title = title,
-            rating = rating,
-            category = category,
-            iswip = iswip,
-            link = getAO3URL() .. href,
-            author = author,
-            gifted_to = gifted_to,
-            summary = summary,
-            tags = tags,
-            relationships = relationships or {},
-            characters = characters or {},
-            warnings = warnings or {},
-            fandoms = fandoms or {},
-            date = date,
-            language = language,
-            words = words,
-            chapters = chapters,
-            hits = hits,
-            comments = comments,
-            kudos = kudos,
-            bookmarks = bookmarks,
-            is_restricted = isRestricted, -- Add the restricted status
-        }
-
-        return work
-    end
-    return nil
-end
-
-function AO3WebParser:parseTagSearchResults(root)
-    local fandom_elements = root:select("li > span > a.tag") -- Adjust the selector based on AO3's HTML structure
---
-    local fandoms = {}
-    for _, element in ipairs(fandom_elements) do
-        -- Extract the fandom name
-        local fandom_name = element:getcontent()
-
-        -- Extract the number of uses from the parent `<span>` element
-        local parent_span = element.parent
-        if parent_span then
-            -- Remove the fandom name from the parent span content
-            local parent_content = parent_span:getcontent()
-            -- Extract the last set of parentheses
-            local uses_text = parent_content:match(".*%((%d+)%)$") -- Match the last number in parentheses
-
-            if fandom_name and uses_text then
-                table.insert(fandoms, {
-                    name = encodeHelper:parseToCodepoints(fandom_name),
-                    uses = tonumber(uses_text),
-                })
-            end
-        end
-    end
-
-    return fandoms
-end
-
-function AO3WebParser:parseWorkPage(root)
-    -- Extract metadata
-    local titleElement = root:select(".title")[1]
-    local authorElements = root:select("a[rel='author']")
-    local giftElements = root:select(".associations > li > a[href$='/gifts']")
-    local summaryElement = root:select(".summary > blockquote")[1]
-    local tagsElement = root:select(".freeform > ul")[1]
-    local relationshipsElement = root:select(".relationship > ul")[1]
-    local charactersElement = root:select(".character > ul")[1]
-    local warningsElement = root:select(".warning > ul")[1]
-    local epubElement = root:select(".download > .expandable > li > a")
-    local ratingElement = root:select(".rating > ul > li > a")[1]
-    local categoryElement = root:select(".category > ul > li > a")[1]
-    local iswipElement = root:select("dt.status")[1]
-
-    -- Extract logged in metadata
-    local markedForLaterElement = root:select(".mark > form > button")[1]
-    local subscriptionFormElement = root:select(".subscribe > form")[1]
-    local bookmarkFormElement = root:select("#bookmark-form > form")[1]
-
-    -- Extract additional metadata
-    local fandomElement = root:select(".fandom > ul")[1]
-    local publishedElement = root:select("dd.published")[1]
-    local updatedElement = root:select("dd.status")[1]
-    local chaptersElement = root:select("dd.chapters")[1]
-    local languageElement = root:select("dd.language")[1]
-
-    -- Extract stats
-    local hitsElement = root:select("dd.hits")[1]
-    local kudosElement = root:select("dd.kudos")[1]
-    local commentsElement = root:select("dd.comments")[1]
-    local bookmarksElement = root:select("dd.bookmarks > a")[1]
-    local wordCountElement = root:select("dd.words")[1]
-    local chapterIDElements = root:select("#chapter_index > li > form > p > select > option")
-
-    -- Extract metadata values
-    local title = titleElement
-        and encodeHelper:parseToCodepoints(titleElement:getcontent():gsub("<[^>]+>", ""):gsub("^%s*(.-)%s*$", "%1"))
-        or "Unknown title"
-
-
-    local author_table = {}
-    for _, author in pairs(authorElements) do
-        table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
-    end
-
-    local author = authorElements and table.concat(author_table, ", ") or "Anonymous"
-
-    local giftedTo_table = {}
-    for _, gift in pairs(giftElements) do
-        table.insert(giftedTo_table, encodeHelper:parseToCodepoints(gift:getcontent()))
-    end
-
-    local gifted_to = giftElements and table.concat(giftedTo_table, ", ") or nil
-
-    local summary = summaryElement
-        and encodeHelper:parseFromHTML(summaryElement:getcontent())
-        or "No summary available"
-
-    local chapterData = {}
-    if chapterIDElements then
-        for __, option in pairs(chapterIDElements) do
-            if option.attributes.value then
-                table.insert(
-                    chapterData,
-                    { id = option.attributes.value, #chapterData + 1, name = option:getcontent() }
-                )
-            end
-        end
-    end
-
-    if #chapterData == 0 then
-        local chapter_title_elements = root:select(".chapter.preface.group > h3.title")
-        for _, chapter_title_element in pairs(chapter_title_elements) do
-            local content = chapter_title_element:getcontent()
-            local chapter_title = string.match(content, "</a>:%s*(.+)") or ("Chapter " .. (#chapterData + 1))
-            local chapter_id = string.match(content, "/chapters/(%d+)")
-            table.insert(chapterData, { id = chapter_id, #chapterData + 1, name = tostring(#chapterData + 1) .. ". " .. chapter_title })
-        end
-    end
-
-    local tags = {}
-    if tagsElement then
-        for _, tag in ipairs(tagsElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(tag:getcontent())
-            if content then
-                table.insert(tags, content)
-            end
-        end
-    end
-
-    local relationships = {}
-    if relationshipsElement then
-        for _, relationship in ipairs(relationshipsElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(relationship:getcontent())
-            if content then
-                table.insert(relationships, content)
-            end
-        end
-    end
-
-    local characters = {}
-    if charactersElement then
-        for _, character in ipairs(charactersElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(character:getcontent())
-            if content then
-                table.insert(characters, content)
-            end
-        end
-    end
-
-    local warnings = {}
-    if warningsElement then
-        for _, warning in ipairs(warningsElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(warning:getcontent())
-            if content then
-                table.insert(warnings, content)
-            end
-        end
-    end
-
-    -- Extract additional metadata values
-    local fandoms = {}
-    if fandomElement then
-        for _, fandom in ipairs(fandomElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(fandom:getcontent())
-            if content then
-                table.insert(fandoms, content)
-            end
-        end
-    end
-
-    local publishedDate = publishedElement and encodeHelper:parseToCodepoints(publishedElement:getcontent()) or "Unknown date"
-    local updatedDate = updatedElement and encodeHelper:parseToCodepoints(updatedElement:getcontent()) or "Unknown date"
-    local chapters = chaptersElement and encodeHelper:parseToCodepoints(chaptersElement:getcontent():gsub("<[^>]+>", ""))
-        or "Unknown chapters"
-    local language = languageElement and encodeHelper:parseToCodepoints(languageElement:getcontent()) or "Unknown language"
-
-    -- Extract logged in metadata values
-    local markedForLater = markedForLaterElement ~= nil and encodeHelper:parseToCodepoints(markedForLaterElement:getcontent()) == "Mark as Read"
-    local subscriptionID = subscriptionFormElement and subscriptionFormElement.attributes and subscriptionFormElement.attributes.id:match("edit_subscription_(%d+)") or false
-    local bookmarkID = bookmarkFormElement and bookmarkFormElement.attributes and bookmarkFormElement.attributes.action:match("/bookmarks/(%d+)") or false
-
-    local bookmarkContent = {}
-
-    local bookmarkNotesElement = root:select("#bookmark_notes")[1]
-    bookmarkContent.notes = bookmarkNotesElement and encodeHelper:parseFromHTML(bookmarkNotesElement:getcontent()) or ""
-
-    local bookmarkTagElement = root:select("#bookmark_tag_string")[1]
-    bookmarkContent.tags = bookmarkTagElement and bookmarkTagElement.attributes and bookmarkTagElement.attributes.value or ""
-
-    local bookmarkCollectionElement = root:select("#bookmark_collection_names")[1]
-    bookmarkContent.collections = bookmarkCollectionElement and bookmarkCollectionElement.attributes and bookmarkCollectionElement.attributes.value or ""
-
-    local bookmarkPrivElement = root:select("#bookmark_private")[1]
-    bookmarkContent.private = bookmarkPrivElement and bookmarkPrivElement.attributes and bookmarkPrivElement.attributes.checked=="checked" or false
-
-    local bookmarkRecElement = root:select("#bookmark_rec")[1]
-    bookmarkContent.rec = bookmarkRecElement and bookmarkRecElement.attributes and bookmarkRecElement.attributes.checked=="checked" or false
-
-    -- Extract EPUB link
-    local epub_link = nil
-    for _, e in ipairs(epubElement) do
-        if encodeHelper:parseToCodepoints(e:getcontent()):lower() == "epub" then
-            epub_link = getAO3URL() .. e.attributes.href
-            break
-        end
-    end
-
-    -- Extract stats values
-    local hits = hitsElement and encodeHelper:parseToCodepoints(hitsElement:getcontent():gsub("<[^>]+>", "")) or "0"
-    local kudos = kudosElement and encodeHelper:parseToCodepoints(kudosElement:getcontent():gsub("<[^>]+>", "")) or "0"
-    local comments = commentsElement and encodeHelper:parseToCodepoints(commentsElement:getcontent():gsub("<[^>]+>", "")) or "0"
-    local bookmarks = bookmarksElement and encodeHelper:parseToCodepoints(bookmarksElement:getcontent():gsub("<[^>]+>", "")) or "0"
-    local wordcount = wordCountElement and wordCountElement:getcontent():gsub(",", "") or "unknown"
-
-    local iswip = iswipElement and iswipElement:getcontent():gsub(":", "") -- Remove colon
-    if iswip == "Completed" then
-        iswip = "Complete"
-    elseif iswip == "Updated" then
-        iswip = "Work in Progress"
-    end
-
-    -- Return metadata as a table
-    local work = {
-        title = title,
-        author = author,
-        gifted_to = gifted_to,
-        chapterData = chapterData,
-        summary = summary,
-        tags = #tags > 0 and table.concat(tags, ", ") or "No tags available",
-        relationships = relationships or {},
-        characters = characters or {},
-        warnings = warnings or {},
-        fandoms = fandoms or {},
-        published = publishedDate,
-        updated = updatedDate,
-        wordcount = wordcount,
-        chapters = chapters,
-        language = language,
-        epub_link = epub_link or nil,
-        hits = hits,
-        kudos = kudos,
-        comments = comments,
-        bookmarks = bookmarks,
-        rating = ratingElement and ratingElement:getcontent(),
-        category = categoryElement and categoryElement:getcontent(),
-        iswip = iswip,
-        markedForLater = markedForLater,
-        subscriptionID = subscriptionID,
-        bookmarkID = bookmarkID,
-        bookmarkContent = bookmarkContent
-    }
-
-    return work
-end
-
-function AO3WebParser:parseUserPage(root)
-    -- Implementation for parsing user page goes here
-    local user_fandoms = root:select("div #user-fandoms > ol > li")
-
-
-    local fandom_list = {}
-
-    for _, fandom in pairs(user_fandoms) do
-        local name = encodeHelper:parseToCodepoints(fandom:select("a")[1]:getcontent())
-        local count = fandom:getcontent():gsub("<a[^>]*>.-</a>", ""):match("%((%d+)%)")
-        local fandom_id = fandom:select("a")[1].attributes.href:match("fandom_id=(%d+)")
-        if name then
-            table.insert(fandom_list, {name = name, count = count and tonumber(count) or 0, id = fandom_id})
-        end
-    end
-
-    local username_element = root:select("div.primary > h2.heading")[1]
-    local author_full = username_element and encodeHelper:parseToCodepoints(username_element:getcontent())
-    author_full = author_full and author_full:gsub("%s+","") or "Unknown User"
-
-    local username, pseud
-    if string.find(author_full, "%(") and string.find(author_full, "%)") then
-        username = string.match(author_full, "%((.-)%)")
-        pseud = string.match(author_full, "^(.-)%s*%(")
-    else
-        username = author_full
-        pseud = author_full
-    end
-
-    local total_pseuds_search = T("a[href$='%1/pseuds']", username)
-    local total_pseuds_element = root:select(total_pseuds_search)[1]
-
-    local total_pseuds = nil
-    if total_pseuds_element then
-        local total_pseuds_text = total_pseuds_element:getcontent()
-        total_pseuds = total_pseuds_text:match("All Pseuds%s*%((%d+)%)")
-
-        total_pseuds = tonumber(total_pseuds)
-    end
-
-    local total_works_search = T("[href$='%1/works']", pseud)
-    local total_works_element = root:select(total_works_search)[1]
-
-    local total_works = nil
-    if total_works_element then
-        local total_works_text = total_works_element:getcontent()
-        total_works = total_works_text:match("Works%s*%((%d+)%)")
-
-        total_works = tonumber(total_works)
-    end
-
-    local total_series_search = T("[href$='%1/series']", pseud)
-    local total_series_element = root:select(total_series_search)[1]
-
-    local total_series = nil
-
-    if total_series_element then
-        local total_series_text = total_series_element:getcontent()
-        total_series = total_series_text:match("Series%s*%((%d+)%)")
-        logger.dbg("AO3Downloader.koplugin: Found total series text: " .. tostring(total_series_text) .. ", extracted total series: " .. tostring(total_series))
-
-        total_series = tonumber(total_series)
-    end
-
-    local total_bookmarks_search = T("[href$='%1/bookmarks']", pseud)
-    local total_bookmarks_element = root:select(total_bookmarks_search)[1]
-    local total_bookmarks = nil
-
-    if total_bookmarks_element then
-        local total_bookmarks_text = total_bookmarks_element:getcontent()
-        total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
-
-        -- Handle skipping the "My Bookmarks" element that appears in the header if the user is logged in
-        if not total_bookmarks then
-            total_bookmarks_element = root:select(total_bookmarks_search)[2]
-            total_bookmarks_text = total_bookmarks_element:getcontent()
-            total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
-        end
-
-        total_bookmarks = tonumber(total_bookmarks)
-    end
-
-    local total_collections_search = T("[href$='%1/collections']", username)
-    local total_collections_element = root:select(total_collections_search)[1]
-    local total_collections = nil
-
-    if total_collections_element then
-        local total_collections_text = total_collections_element:getcontent()
-        total_collections = total_collections_text:match("Collections%s*%((%d+)%)")
-
-        total_collections = tonumber(total_collections)
-    end
-
-    local total_gifts_search = T("[href$='%1/gifts']", username)
-    local total_gifts_element = root:select(total_gifts_search)[1]
-    local total_gifts = nil
-
-    if total_gifts_element then
-        local total_gifts_text = total_gifts_element:getcontent()
-        total_gifts = total_gifts_text:match("Gifts%s*%((%d+)%)")
-
-        total_gifts = tonumber(total_gifts)
-    end
-
-    return {
-        username = username,
-        pseud = pseud,
-        fandoms = fandom_list,
-        total_pseuds = total_pseuds or 1,
-        total_works = total_works or 0,
-        total_series = total_series or 0,
-        total_bookmarks = total_bookmarks or 0,
-        total_collections = total_collections or 0,
-        total_gifts = total_gifts or 0,
-    }
-end
-
-function AO3WebParser:parseUserPseuds(root)
-    local pseuds = {}
-    local elements = root:select("li.pseud")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        local pseudElement = element:select("h4.heading > a")[1]
-        if pseudElement then
-            local pseud_name = encodeHelper:parseToCodepoints(pseudElement:getcontent())
-
-            local worksElement = element:select("h5.heading > a[href$='/works']")[1]
-            local recsElement = element:select("h5.heading > a[href$='recs_only=true']")[1]
-
-            local work_count = nil
-            local rec_count = nil
-
-            if worksElement then
-                local works_text = worksElement:getcontent()
-                work_count = tonumber(works_text:match("([%d,]+) work"):gsub(",", ""), 10)
-            end
-
-            if recsElement then
-                local recs_text = recsElement:getcontent()
-                rec_count = tonumber(recs_text:match("([%d,]+) rec"):gsub(",", ""), 10)
-            end
-
-            local pseud = {
-                name = pseud_name,
-                works_count = work_count or 0,
-                recs_count = rec_count or 0,
-            }
-
-            table.insert(pseuds, count, pseud)
-            count = count + 1
-        end
-    end
-
-    return pseuds
-end
-
-function AO3WebParser:parseAccountPseudID(root)
-
-    local element = root:select(".edit_pseud")[1]
-
-    local pseud_id = element and element.attributes and element.attributes.id:match("edit_pseud_(%d+)") or false
-
-    return pseud_id
-end
-
-function AO3WebParser:parseUserSearchResults(root)
-    local users = {}
-    local elements = root:select("li.user")
-
-    local count = 1
-
-    for _, element in ipairs(elements) do
-        local usernameElements = element:select("h4.heading > a")
-        if usernameElements then
-            local username = nil
-            local pseud = nil
-            local work_count = nil
-            local bookmark_count = nil
-
-            if usernameElements[2] == nil then
-                username = encodeHelper:parseToCodepoints(usernameElements[1]:getcontent())
-                pseud = username
-            else
-                username = encodeHelper:parseToCodepoints(usernameElements[2]:getcontent())
-                pseud = usernameElements[1]:getcontent()
-            end
-
-            local worksElement = element:select("h5.heading > a[href$='/works']")[1]
-            local bookmarksElement = element:select("h5.heading > a[href$='/bookmarks']")[1]
-
-            if worksElement then
-                local works_text = worksElement:getcontent()
-                work_count = tonumber(works_text:match("([%d,]+) works"):gsub(",", ""), 10)
-            end
-
-            if bookmarksElement then
-                local bookmarks_text = bookmarksElement:getcontent()
-                bookmark_count = tonumber(bookmarks_text:match("([%d,]+) bookmarks"):gsub(",", ""), 10)
-            end
-
-
-
-
-
-            local user = {
-                username = username,
-                pseud = pseud,
-                works_count = work_count or 0,
-                bookmarks_count = bookmark_count or 0,
-            }
-
-            table.insert(users, count, user)
-            count = count + 1
-        end
-    end
-
-    return users
-end
-
-function AO3WebParser:parseUsersWorkBookmark(root)
-    local bookmark_details = {
-        notes = "",
-        tags = "",
-        collections = "",
-        private = false,
-        rec = false,
-    }
-
-    local bookmarkForm = root:select("#bookmark-form > form")[1]
-
-
-    if not bookmarkForm then
-        return bookmark_details
-    end
-
-    bookmark_details.notes = bookmarkForm:select("textarea#bookmark_notes")[1] and encodeHelper:parseFromHTML(root:select("textarea#bookmark_notes")[1]:getcontent()) or ""
-
-    -- Tags are stored in a text input field as comma-separated values
-    local tags_input = bookmarkForm:select("input#bookmark_tag_string")[1]
-    if tags_input and tags_input.attributes and tags_input.attributes.value then
-        local tags_string = tags_input.attributes.value
-        -- Split by comma and trim whitespace
-        for tag in tags_string:gmatch("([^,]+)") do
-            tag = tag:match("^%s*(.-)%s*$") -- trim whitespace
-            if tag and tag ~= "" then
-                bookmark_details.tags = bookmark_details.tags .. (bookmark_details.tags ~= "" and ", " or "") .. tag
-            end
-        end
-    end
-
-    -- Collections are stored in a text input field, not as li.added.tag elements
-    local collections_input = bookmarkForm:select("input#bookmark_collection_names")[1]
-    if collections_input and collections_input.attributes and collections_input.attributes.value then
-        local collections_string = collections_input.attributes.value
-        -- Split by comma and trim whitespace
-        for collection in collections_string:gmatch("([^,]+)") do
-            collection = collection:match("^%s*(.-)%s*$") -- trim whitespace
-            if collection and collection ~= "" then
-                bookmark_details.collections = bookmark_details.collections .. (bookmark_details.collections ~= "" and ", " or "") .. collection
-            end
-        end
-    end
-
-    bookmark_details.private = bookmarkForm:select("input#bookmark_private")[1] and bookmarkForm:select("input#bookmark_private")[1].attributes.checked == "checked" or false
-
-    bookmark_details.rec = bookmarkForm:select("input#bookmark_rec")[1] and bookmarkForm:select("input#bookmark_rec")[1].attributes.checked == "checked" or false
-
-    return bookmark_details
-end
--- HTTPQueryHandler
-HTTPQueryHandler.cookies = {}
-
-local function parseSetCookie(set_cookie_value)
-    local function isParameter(targetString)
-        local parameter_names = { "Domain", "Expires", "HttpOnly", "Max-Age", "Partioned", "Path", "SameSite", "Secure" }
-        for _, value in ipairs(parameter_names) do
-            if string.lower(targetString) == string.lower(value) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local cookies_values = {}
-    -- Split the set-cookie string by ',' or ';' to handle each part separately
-    local parts = {}
-    local in_expires = false
-    local buffer = ""
-
-    for part in set_cookie_value:gmatch("[^,;]+") do
-        -- Allow for expires value to contain single ,
-        if part:find("expires=", 1, true) then
-            in_expires = true
-            buffer = part
-        elseif in_expires then
-            buffer = buffer .. "," .. part
-            if part:find(" ") then
-                table.insert(parts, buffer)
-                in_expires = false
-                buffer = ""
-            end
-        else
-            table.insert(parts, part)
-        end
-    end
-
-    if buffer ~= "" then
-        table.insert(parts, buffer)
-    end
-
-    local current_cookie = nil
-    for _, part in ipairs(parts) do
-        -- Trim leading and trailing spaces
-        part = part:match("^%s*(.-)%s*$")
-        -- Match key-value pairs or key-only values
-        local name, value = part:match("([^=]+)=?(.*)")
-        if not isParameter(name) and value ~= "" and value ~= nil then
-            if current_cookie then
-                table.insert(cookies_values, current_cookie)
-            end
-            current_cookie = {}
-            current_cookie["name"] = name
-            current_cookie["value"] = value
-        elseif name then
-            current_cookie[name] = value or true
-        end
-    end
-    if current_cookie then
-        table.insert(cookies_values, current_cookie)
-    end
-
-    return cookies_values
-end
-
-function HTTPQueryHandler:saveCookiesToConfig()
-    Config:saveSetting("cookies", self.cookies)
-end
-
-function HTTPQueryHandler:loadCookiesFromConfig()
-    local savedCookies = Config:readSetting("cookies")
-    if savedCookies then
-        self.cookies = savedCookies
-    end
-end
-
-function HTTPQueryHandler:getCookies(custom_cookies, url)
-    self:loadCookiesFromConfig()
-    local cookieHeader = {}
-    local request_domain = url:match("^(https?://[^/]+)")
-    local cookies_for_this_domain = self.cookies[request_domain];
-
-    if cookies_for_this_domain == nil then
-        return "";
-    end
-
-    for __, cookie in pairs(cookies_for_this_domain) do
-        table.insert(cookieHeader, T("%1=%2", cookie.name, cookie.value))
-    end
-
-    if custom_cookies then
-        for key, value in pairs(custom_cookies) do
-            table.insert(cookieHeader, T("%1=%2", key, value))
-        end
-    end
-
-    return table.concat(cookieHeader, "; ");
-end
-
-function HTTPQueryHandler:setCookies(response_headers, request_url)
-    local request_domain = request_url:match("^(https?://[^/]+)")
-    if response_headers["set-cookie"] then
-        local set_cookie_value = response_headers["set-cookie"]
-        local parsed_cookies = parseSetCookie(set_cookie_value)
-
-        for _, current_cookie in ipairs(parsed_cookies) do
-            if not self.cookies[request_domain] then
-                self.cookies[request_domain] = {}
-            end
-            self.cookies[request_domain][current_cookie.name] = current_cookie
-        end
-
-        self:saveCookiesToConfig()
-    end
-end
-
-function HTTPQueryHandler.get_default_headers()
-    return {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
-        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        ["Accept-Language"] = "en-US,en;q=0.5",
-        ["Sec-GPC"] = 1,
-        ["Connection"] = "keep-alive",
-        ["DNT"] = "1", -- Do Not Track
-    }
-end
-
-function HTTPQueryHandler:performHTTPRequest(request, retries)
-    local max_retries = retries or 3;
-
-    local response, status, response_headers
-
-    request.headers = request.headers or self.get_default_headers()
-    request.headers["Cookie"] = HTTPQueryHandler:getCookies(request.cookies, request.url);
-
-
-
-    logger.dbg("AO3Downloader.koplugin: Peforming HTTP request to :" .. request.url);
-
-
-
-    for i = 1, max_retries do
-        logger.dbg("AO3Downloader.koplugin: Attempt " .. (i) .. " for URL: " .. request.url)
-        socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
-        response, status, response_headers = https.request({
-            url = request.url,
-            method = request.method or "GET",
-            headers = request.headers,
-            sink = request.sink,
-            source = request.source,
-            protocol = "tlsv1_3",
-            options = "all",
-        })
-
-        -- Parse cookies from set_cookie
-        if response_headers then
-            HTTPQueryHandler:setCookies(response_headers, request.url)
-        end
-
-        -- deal out redirects
-        if status == 301 and response_headers["location"] then
-            local new_url = response_headers["location"]
-            logger.dbg("AO3Downloader.koplugin: Redirecting to new URL: " .. new_url)
-            request.url = new_url -- Update the request URL
-            return self:performHTTPRequest(request, retries) -- Recursive call for the new URL
-        elseif response == 1 and status ~= 418 then
-            socketutil:reset_timeout()
-            return {
-                success = true,
-                response = response,
-                response_headers = response_headers,
-                status = status,
-            }
-        end
-
-    end
-
-    logger.dbg("AO3Downloader.koplugin: Request failed after " .. max_retries .. " attempts. Status: " .. tostring(status))
-    return {
-        success = false,
-        response = response,
-        response_headers = response_headers,
-        status = status,
-    }
+    local result
+    result, err = postAction(T("%1/bookmarks/%2", Config:getAO3Domain(), bookmark_id), {
+        ["authenticity_token"] = session.token,
+        ["_method"] = "delete",
+    }, { 302 }, "Failed to delete bookmark.", { headers = { ["X-CSRF-Token"] = session.token } })
+    return result and true, err
 end
 
 return AO3DownloaderClient

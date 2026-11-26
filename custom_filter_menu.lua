@@ -1,35 +1,21 @@
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
-local FanficBrowser = require("fanficbrowser")
 local Config = require("fanfic_config")
 local UIManager = require("ui/uimanager")
-local util = require("util")
 local logger = require("logger")
 local _ = require("gettext")
+local Cancellable = require("cancellable")
+local UIResult = require("ui_result")
+local AO3DownloaderClient = require("AO3_downloader_client")
 
-function util.contains(tableValue, value, comparisonFunction)
-    logger.dbg(tableValue)
-    if comparisonFunction == nil then
-        comparisonFunction = function(v1, v2)
-            return v1 == v2
-        end
-    end
+local util = require("util")
+local contains = util.arrayContains
 
-    for _, v in pairs(tableValue) do
-        if comparisonFunction(v, value) then
-            return true
-        end
-    end
-    return false
-end
-
-function util.remove(tableValue, value)
-    for i, v in ipairs(tableValue) do
-        if v == value then
-            table.remove(tableValue, i)
-            break
-        end
+local function remove(list, value)
+    local i = contains(list, value)
+    if i then
+        table.remove(list, i)
     end
 end
 
@@ -55,6 +41,43 @@ local function deepcopy(orig, copies)
     return copy
 end
 
+-- Asks for a tag query, searches category, and passes non-empty results to onResults.
+local function promptTagSearch(title, category, onResults)
+    local inputDialog
+    inputDialog = InputDialog:new({
+        title = title,
+        input = "",
+        input_type = "text",
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(inputDialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = Cancellable.wrap(_("Searching tags…"), function()
+                        local value = inputDialog:getInputText()
+                        if value == "" then
+                            return
+                        end
+                        local tagSearchResults = UIResult.unwrap(AO3DownloaderClient:searchForTags(value, category))
+                        if tagSearchResults then
+                            onResults(tagSearchResults)
+                            UIManager:close(inputDialog)
+                        end
+                    end),
+                },
+            },
+        },
+    })
+    UIManager:show(inputDialog)
+    inputDialog:onShowKeyboard()
+end
+
 local CustomFilterMenu = {}
 
 function CustomFilterMenu:goBack()
@@ -76,8 +99,8 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
     for __, option in pairs(options) do
         table.insert(menu_items, {
             text_func = function()
-                local show_checked = util.contains(self.filter[settingValue], option.value)
-                local show_crossed = util.contains(self.filter[excludeSettingValue], option.value)
+                local show_checked = contains(self.filter[settingValue], option.value)
+                local show_crossed = contains(self.filter[excludeSettingValue], option.value)
                 if show_checked then
                     return "✓ " .. option.text
                 elseif show_crossed then
@@ -87,11 +110,11 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
                 end
             end,
             callback = function()
-                if util.contains(self.filter[settingValue], option.value) then
-                    util.remove(self.filter[settingValue], option.value)
+                if contains(self.filter[settingValue], option.value) then
+                    remove(self.filter[settingValue], option.value)
                     table.insert(self.filter[excludeSettingValue], option.value)
-                elseif util.contains(self.filter[excludeSettingValue], option.value) then
-                    util.remove(self.filter[excludeSettingValue], option.value)
+                elseif contains(self.filter[excludeSettingValue], option.value) then
+                    remove(self.filter[excludeSettingValue], option.value)
                 else
                     table.insert(self.filter[settingValue], option.value)
                 end
@@ -168,7 +191,7 @@ function CustomFilterMenu:selectionWidget(title, options, setting)
     self.menuWidget:GoDownInMenu(title, menu_items, "Select option to filter by")
 end
 
-function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settingValue)
+function CustomFilterMenu:tagSelectionWidget(title, tagCategoryForSearch, settingValue)
     self.menuWidget.lock_return = true
     local excludeSettingValue = "exclude_" .. settingValue
 
@@ -199,44 +222,9 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
         table.insert(menu_items, {
             text = "\u{f002} Search for tags to add to filter",
             callback = function()
-                local inputDialog
-                inputDialog = InputDialog:new({
-                    title = title,
-                    input = "",
-                    input_type = "text",
-                    buttons = {
-                        {
-                            {
-                                text = _("Cancel"),
-                                callback = function()
-                                    UIManager:close(inputDialog)
-                                end,
-                            },
-                            {
-                                text = _("Search"),
-                                is_enter_default = true,
-                                callback = function()
-                                    local value = inputDialog:getInputText()
-                                    if value == "" then
-                                        return
-                                    end
-                                    local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                                    if success then
-                                        self:tagSearchSelectionWidget(
-                                            "Tap on character tags to add to filter",
-                                            tagSearchResults,
-                                            settingValue,
-                                            refresh
-                                        )
-                                        UIManager:close(inputDialog)
-                                    end
-                                end,
-                            },
-                        },
-                    },
-                })
-                UIManager:show(inputDialog)
-                inputDialog:onShowKeyboard()
+                promptTagSearch(title, tagCategoryForSearch, function(tagSearchResults)
+                    self:tagSearchSelectionWidget("Tap on character tags to add to filter", tagSearchResults, settingValue, refresh)
+                end)
             end,
         })
 
@@ -253,7 +241,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     text = "Move to exclude filter",
 
                                     callback = function()
-                                        util.remove(self.filter[settingValue], tag)
+                                        remove(self.filter[settingValue], tag)
                                         table.insert(self.filter[excludeSettingValue], tag)
 
                                         self.menuWidget.item_table = refresh()
@@ -264,7 +252,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                 {
                                     text = "Remove tag",
                                     callback = function()
-                                        util.remove(self.filter[settingValue], tag)
+                                        remove(self.filter[settingValue], tag)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
@@ -296,7 +284,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     text = "Move to include filter",
 
                                     callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
+                                        remove(self.filter[excludeSettingValue], tag)
                                         table.insert(self.filter[settingValue], tag)
 
                                         self.menuWidget.item_table = refresh()
@@ -309,7 +297,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                 {
                                     text = "Remove tag",
                                     callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
+                                        remove(self.filter[excludeSettingValue], tag)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
@@ -355,8 +343,8 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
             text_func = function()
-                local show_checked = util.contains(self.filter[settingValue], tag.name)
-                local show_cross = util.contains(self.filter[excludeSettingValue], tag.name)
+                local show_checked = contains(self.filter[settingValue], tag.name)
+                local show_cross = contains(self.filter[excludeSettingValue], tag.name)
                 if show_checked then
                     return "✓ " .. tag.name
                 elseif show_cross then
@@ -366,11 +354,11 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
                 end
             end,
             callback = function()
-                if util.contains(self.filter[settingValue], tag.name) then
-                    util.remove(self.filter[settingValue], tag.name)
+                if contains(self.filter[settingValue], tag.name) then
+                    remove(self.filter[settingValue], tag.name)
                     table.insert(self.filter[excludeSettingValue], tag.name)
-                elseif util.contains(self.filter[excludeSettingValue], tag.name) then
-                    util.remove(self.filter[excludeSettingValue], tag.name)
+                elseif contains(self.filter[excludeSettingValue], tag.name) then
+                    remove(self.filter[excludeSettingValue], tag.name)
                 else
                     table.insert(self.filter[settingValue], tag.name)
                 end
@@ -382,44 +370,10 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
     self.menuWidget:GoDownInMenu(title, menu_items, "Tap tag to add to filter, again for exclude filter")
 end
 
-function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settingValue)
-    local inputDialog
-    inputDialog = InputDialog:new({
-        title = title,
-        input = "",
-        input_type = "text",
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        UIManager:close(inputDialog)
-                    end,
-                },
-                {
-                    text = _("Search"),
-                    is_enter_default = true,
-                    callback = function()
-                        local value = inputDialog:getInputText()
-                        if value == "" then
-                            return
-                        end
-                        local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                        if success then
-                            self:singleTagSearchSelection(
-                                "Tap on character tags to add to filter",
-                                tagSearchResults,
-                                settingValue
-                            )
-                            UIManager:close(inputDialog)
-                        end
-                    end,
-                },
-            },
-        },
-    })
-    UIManager:show(inputDialog)
-    inputDialog:onShowKeyboard()
+function CustomFilterMenu:singleTagSelection(title, tagCategoryForSearch, settingValue)
+    promptTagSearch(title, tagCategoryForSearch, function(tagSearchResults)
+        self:singleTagSearchSelection("Tap on character tags to add to filter", tagSearchResults, settingValue)
+    end)
 end
 
 function CustomFilterMenu:singleTagSearchSelection(title, tagSearchResults, settingValue)
@@ -469,7 +423,7 @@ function CustomFilterMenu:refreshMainMenu()
         },
     }
     local filters = Config:readSetting("saved_filters", {})
-    if #filters > 0 then
+    if next(filters) ~= nil then -- keyed by title, so # is always 0
         table.insert(menuOptions, {
             text = "Saved filters:",
         })
@@ -531,6 +485,55 @@ function CustomFilterMenu:refreshMainMenu()
     return menuOptions
 end
 
+-- The crafter menu is identical in create and edit mode apart from the save
+-- actions, so both modes share this builder.
+function CustomFilterMenu:crafterMenuOptions(save_actions)
+    local options = {
+        {
+            text_func = function()
+                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
+            end,
+            callback = function()
+                self:selectMainTag()
+            end,
+        },
+        {
+            text = "Work Info filters \u{23F5}",
+            callback = function()
+                self:WorkInfoSubmenu()
+            end,
+        },
+        {
+            text = "Work Tags filters \u{23F5}",
+            callback = function()
+                self:WorkTagsSubmenu()
+            end,
+        },
+        {
+            text = "Work Stats filters \u{23F5}",
+            callback = function()
+                self:WorkStatSubmenu()
+            end,
+        },
+        {
+            text = "Search Order filters \u{23F5}",
+            callback = function()
+                self:WorkOrderSubmenu()
+            end,
+        },
+    }
+    for __, action in ipairs(save_actions) do
+        table.insert(options, action)
+    end
+    table.insert(options, {
+        text = "\u{f002} Execute Search",
+        callback = function()
+            self:executeSearch()
+        end,
+    })
+    return options
+end
+
 function CustomFilterMenu:FilterCrafter()
     -- Initialize filter options
     self.filter = {
@@ -564,91 +567,20 @@ function CustomFilterMenu:FilterCrafter()
         sort_direction = nil,
     }
 
-    local filterMenuOptions = {
-        {
-            text_func = function()
-                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
-            end,
-            callback = function()
-                self:selectMainTag()
-            end,
-        },
-        {
-            text = "Work Info filters \u{23F5}",
-            callback = function()
-                self:WorkInfoSubmenu()
-            end,
-        },
-        {
-            text = "Work Tags filters \u{23F5}",
-            callback = function()
-                self:WorkTagsSubmenu()
-            end,
-        },
-        {
-            text = "Work Stats filters \u{23F5}",
-            callback = function()
-                self:WorkStatSubmenu()
-            end,
-        },
-        {
-            text = "Search Order filters \u{23F5}",
-            callback = function()
-                self:WorkOrderSubmenu()
-            end,
-        },
+    self.menuWidget:GoDownInMenu("Create filter", self:crafterMenuOptions({
         {
             text = "\u{2193} Save current filter",
             callback = function()
                 self:SaveFilters()
             end,
         },
-        {
-            text = "\u{f002} Execute Search",
-            callback = function()
-                self:executeSearch()
-            end,
-        },
-    }
-
-    self.menuWidget:GoDownInMenu("Create filter", filterMenuOptions)
+    }))
 end
 
 function CustomFilterMenu:UpdateFilterCrafter(filter)
     self.filter = deepcopy(filter.parameters)
-    local filterMenuOptions = {
-        {
-            text_func = function()
-                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
-            end,
-            callback = function()
-                self:selectMainTag()
-            end,
-        },
-        {
-            text = "Work Info filters \u{23F5}",
-            callback = function()
-                self:WorkInfoSubmenu()
-            end,
-        },
-        {
-            text = "Work Tags filters \u{23F5}",
-            callback = function()
-                self:WorkTagsSubmenu()
-            end,
-        },
-        {
-            text = "Work Stats filters \u{23F5}",
-            callback = function()
-                self:WorkStatSubmenu()
-            end,
-        },
-        {
-            text = "Search Order filters \u{23F5}",
-            callback = function()
-                self:WorkOrderSubmenu()
-            end,
-        },
+
+    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title, self:crafterMenuOptions({
         {
             text = "\u{2193} Save as current filter",
             callback = function()
@@ -683,15 +615,7 @@ function CustomFilterMenu:UpdateFilterCrafter(filter)
                 self:SaveFilters()
             end,
         },
-        {
-            text = "\u{f002} Execute Search",
-            callback = function()
-                self:executeSearch()
-            end,
-        },
-    }
-
-    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title, filterMenuOptions)
+    }))
 end
 
 function CustomFilterMenu:selectMainTag()
@@ -1027,7 +951,7 @@ function CustomFilterMenu:WorkStatSubmenu()
                 return "Comments: " .. (self.filter.comments or "any amount")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectComments()
             end,
         },
         {
@@ -1035,7 +959,7 @@ function CustomFilterMenu:WorkStatSubmenu()
                 return "Bookmarks: " .. (self.filter.bookmarks or "any amount")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectBookmarks()
             end,
         },
     }
@@ -1164,7 +1088,7 @@ function CustomFilterMenu:selectRating()
         },
         {
             text = "Teen and Up Audiences",
-            value = "1q",
+            value = "11",
         },
         {
             text = "Mature",
@@ -1343,7 +1267,7 @@ function CustomFilterMenu:selectSortBy()
         },
         {
             text = "Comments",
-            value = "comment_count",
+            value = "comments_count",
         },
         {
             text = "Bookmarks",
@@ -1378,65 +1302,46 @@ function CustomFilterMenu:executeSearch()
         }))
         return
     end
-    UIManager:scheduleIn(1, function()
-        local parameters = {
-            ["work_search[complete]"] = self.filter.completion_status or nil,
-            ["work_search[crossover]"] = self.filter.crossovers or nil,
-            ["work_search[single_chapter]"] = self.filter.single_chapter or nil,
-            ["work_search[word_count]"] = self.filter.word_count or nil,
-            ["work_search[language_id]"] = self.filter.language_id or nil,
-            ["work_search[date_from]"] = self.filter.date_from or nil,
-            ["work_search[date_to]"] = self.filter.date_to or nil,
-            ["work_search[fandom_names]"] = self.filter.fandom_names and table.concat(self.filter.fandom_names, ",")
-                or nil,
-            ["work_search[rating_ids]"] = self.filter.rating or nil,
-            ["work_search[archive_warning_ids][]"] = self.filter.warnings or nil,
-            ["exclude_work_search[archive_warning_ids][]"] = self.filter.exclude_warnings or nil,
-            ["work_search[category_ids][]"] = self.filter.categories or nil,
-            ["exclude_work_search[category_ids][]"] = self.filter.exclude_categories or nil,
-            ["work_search[character_names]"] = self.filter.characters and table.concat(self.filter.characters, ",")
-                or nil,
-            ["work_search[relationship_names]"] = self.filter.relationships
-                and table.concat(self.filter.relationships, ",")
-                or nil,
-            ["work_search[freeform_names]"] = self.filter.additional_tags
-                and table.concat(self.filter.additional_tags, ",")
-                or nil,
-            ["work_search[hits]"] = self.filter.hits or nil,
-            ["work_search[kudos_count]"] = self.filter.kudos or nil,
-            ["work_search[comments_count]"] = self.filter.comments or nil,
-            ["work_search[bookmarks_count]"] = self.filter.bookmarks or nil,
-            ["work_search[sort_column]"] = self.filter.sort_by or nil,
-            ["work_search[sort_direction]"] = self.filter.sort_direction or nil,
-            ["tag_id"] = self.filter.main_tag or nil,
-            ["work_search[excluded_tag_names]"] = table.concat({
-                self.filter.exclude_fandom_names and table.concat(self.filter.exclude_fandom_names, ",") or "",
-                self.filter.exclude_characters and table.concat(self.filter.exclude_characters, ",") or "",
-                self.filter.exclude_relationships and table.concat(self.filter.exclude_relationships, ",") or "",
-                self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ",") or "",
-            }, ","),
-        }
-        local success, ficResults, fetchNextPage = self.fanfic:executeSearch(parameters)
-
-        if not success then
-            UIManager:show(InfoMessage:new({
-                text = _("Failed to fetch results for the custom filter."),
-                timeout = 2,
-            }))
-            return
-        end
-
-        -- Show the results in the FanficBrowser
-        self.fanfic:onShowFanficBrowser(
-            ficResults,
-            fetchNextPage
-        )
+    local parameters = {
+        ["work_search[complete]"] = self.filter.completion_status or nil,
+        ["work_search[crossover]"] = self.filter.crossovers or nil,
+        ["work_search[single_chapter]"] = self.filter.single_chapter or nil,
+        ["work_search[word_count]"] = self.filter.word_count or nil,
+        ["work_search[language_id]"] = self.filter.language_id or nil,
+        ["work_search[date_from]"] = self.filter.date_from or nil,
+        ["work_search[date_to]"] = self.filter.date_to or nil,
+        ["work_search[fandom_names]"] = self.filter.fandom_names and table.concat(self.filter.fandom_names, ",")
+            or nil,
+        ["work_search[rating_ids]"] = self.filter.rating or nil,
+        ["work_search[archive_warning_ids][]"] = self.filter.warnings or nil,
+        ["exclude_work_search[archive_warning_ids][]"] = self.filter.exclude_warnings or nil,
+        ["work_search[category_ids][]"] = self.filter.categories or nil,
+        ["exclude_work_search[category_ids][]"] = self.filter.exclude_categories or nil,
+        ["work_search[character_names]"] = self.filter.characters and table.concat(self.filter.characters, ",")
+            or nil,
+        ["work_search[relationship_names]"] = self.filter.relationships
+            and table.concat(self.filter.relationships, ",")
+            or nil,
+        ["work_search[freeform_names]"] = self.filter.additional_tags
+            and table.concat(self.filter.additional_tags, ",")
+            or nil,
+        ["work_search[hits]"] = self.filter.hits or nil,
+        ["work_search[kudos_count]"] = self.filter.kudos or nil,
+        ["work_search[comments_count]"] = self.filter.comments or nil,
+        ["work_search[bookmarks_count]"] = self.filter.bookmarks or nil,
+        ["work_search[sort_column]"] = self.filter.sort_by or nil,
+        ["work_search[sort_direction]"] = self.filter.sort_direction or nil,
+        ["tag_id"] = self.filter.main_tag or nil,
+        ["work_search[excluded_tag_names]"] = table.concat({
+            self.filter.exclude_fandom_names and table.concat(self.filter.exclude_fandom_names, ",") or "",
+            self.filter.exclude_characters and table.concat(self.filter.exclude_characters, ",") or "",
+            self.filter.exclude_relationships and table.concat(self.filter.exclude_relationships, ",") or "",
+            self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ",") or "",
+        }, ","),
+    }
+    self.fanfic:browse(_("Searching with custom filter…"), function(page)
+        return AO3DownloaderClient:searchByParameters(parameters, page)
     end)
-
-    UIManager:show(InfoMessage:new({
-        text = _("Searching with custom filter..."),
-        timeout = 1,
-    }))
 end
 
 return CustomFilterMenu

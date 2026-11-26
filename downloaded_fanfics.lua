@@ -1,4 +1,4 @@
-local json = require("dkjson")
+local json = require("rapidjson")
 local Paths = require("FanficPaths")
 local logger = require("logger")
 local ffiUtil = require("ffi/util")
@@ -8,6 +8,7 @@ local DownloadedFanfics = {}
 
 local history_file_path = Paths.getHomeDirectory() .. "/fanfic_history.json"
 local downloaded_fanfics = {}
+local save_blocked = false -- set when an unreadable history file couldn't be backed up
 
 -- From: http://lua-users.org/wiki/CopyTable
 local function deepcopy(orig, copies)
@@ -31,26 +32,84 @@ local function deepcopy(orig, copies)
     return copy
 end
 
--- Helper function to ensure a field is always a table
+-- Placeholders older versions stored in place of an empty tag list.
+local TAG_PLACEHOLDERS = { ["N/A"] = true, ["No tags available"] = true }
+
+-- Returns field as a list of trimmed items. Older records stored "a, b" or { "a, b" };
+-- splitting on commas is safe because AO3 tags can't contain them.
 local function normalizeField(field)
-    if type(field) == "string" then
-        return { field } -- Convert single string to a table
-    elseif type(field) == "table" then
-        return field     -- Already a table
-    else
-        return {}        -- Default to an empty table
+    local items = {}
+    for _, value in ipairs(type(field) == "table" and field or { field }) do
+        for item in tostring(value):gmatch("[^,]+") do
+            item = item:match("^%s*(.-)%s*$")
+            if item ~= "" and not TAG_PLACEHOLDERS[item] then
+                table.insert(items, item)
+            end
+        end
     end
+    return items
+end
+
+-- Normalizes a fanfic record's fields to the shapes the rest of the code expects.
+local function normalizeFanfic(fanfic)
+    fanfic.id = tostring(fanfic.id)
+    fanfic.fandoms = normalizeField(fanfic.fandoms)
+    fanfic.relationships = normalizeField(fanfic.relationships)
+    fanfic.characters = normalizeField(fanfic.characters)
+    fanfic.tags = normalizeField(fanfic.tags)
+end
+
+-- Metadata fields copied from a fresh work page onto a downloaded work's record.
+local METADATA_FIELDS = {
+    "title", "author", "chapters", "summary", "fandoms", "tags", "relationships",
+    "characters", "warnings", "hits", "kudos", "bookmarks", "comments", "rating",
+    "category", "iswip", "updated", "published", "wordcount",
+}
+
+-- Account-state fields: always taken from the fresh page, never merged with stored values.
+local ACCOUNT_FIELDS = {
+    "markedForLater", "subscriptionID", "bookmarkID", "bookmarkContent",
+}
+
+-- Returns chapters with read flags carried over from old_chapters: matched by chapter id
+-- (so an inserted chapter doesn't shift progress), by position for records without ids.
+local function carryReadProgress(old_chapters, chapters)
+    local old_by_id = {}
+    for _, chapter in ipairs(old_chapters) do
+        if chapter.id then
+            old_by_id[chapter.id] = chapter
+        end
+    end
+    for idx, chapter in ipairs(chapters) do
+        local old
+        if chapter.id and next(old_by_id) then
+            old = old_by_id[chapter.id]
+        else
+            old = old_chapters[idx]
+        end
+        chapter.read = old and old.read or false
+    end
+    return chapters
 end
 
 -- Save the downloaded fanfic history to a file
 function DownloadedFanfics.save()
+    if save_blocked then
+        logger.err("Not saving fanfic history: the existing file is unreadable and has no backup")
+        return
+    end
+    local content, encode_err = json.encode(downloaded_fanfics, { pretty = true })
+    if not content then
+        logger.err("Failed to encode fanfic history:", encode_err)
+        return
+    end
+
     local file, err = io.open(history_file_path, "w")
     if not file then
         logger.err("Failed to save fanfic history:", err)
         return
     end
 
-    local content = json.encode(downloaded_fanfics, { indent = true })
     file:write(content)
     file:close()
     logger.dbg("Fanfic history saved successfully.")
@@ -81,19 +140,20 @@ function DownloadedFanfics.load()
     local content = file:read("*a")
     file:close()
 
-    local history, _, err = json.decode(content)
-    if not history then
-        logger.err("Failed to load fanfic history:", err)
+    local ok, history, decode_err = pcall(json.decode, content)
+    if not ok or type(history) ~= "table" then
+        -- set the unreadable file aside, or the next save would overwrite it with an empty history
+        local backup_path = history_file_path .. "." .. os.date("%Y%m%d-%H%M%S") .. ".bak"
+        local renamed, rename_err = os.rename(history_file_path, backup_path)
+        save_blocked = not renamed
+        logger.err("Failed to load fanfic history:", ok and decode_err or history,
+            renamed and ("kept as " .. backup_path) or ("and could not back it up: " .. tostring(rename_err)))
         return
     end
 
     -- Normalize fields for all loaded fanfics
     for _, fanfic in pairs(history) do
-        fanfic.id = tostring(fanfic.id)
-        fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
-        fanfic.relationships = normalizeField(fanfic.relationships)
-        fanfic.characters = normalizeField(fanfic.characters)
-        fanfic.tags = normalizeField(fanfic.tags)
+        normalizeFanfic(fanfic)
     end
 
     downloaded_fanfics = history
@@ -105,27 +165,34 @@ function DownloadedFanfics.getAll()
     return deepcopy(downloaded_fanfics)
 end
 
--- Add a new fanfic to the downloaded list
-function DownloadedFanfics.add(fanfic)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
-    downloaded_fanfics[tostring(fanfic.id)] = fanfic
-    DownloadedFanfics.save()
-end
-
 -- Update an existing fanfic in the downloaded list
 function DownloadedFanfics.update(fanfic, notSave)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
-    downloaded_fanfics[tostring(fanfic.id)] = fanfic
+    normalizeFanfic(fanfic)
+    downloaded_fanfics[fanfic.id] = fanfic
     if notSave then
         return
     end
     DownloadedFanfics.save()
+end
+
+-- Refreshes fanfic's record from freshly downloaded work metadata and saves it.
+-- Nil metadata fields keep the stored value; read progress carries over.
+function DownloadedFanfics.storeDownload(fanfic, metadata)
+    -- a whole-work read flag is stale once per-chapter data exists
+    if fanfic.chapter_data and #fanfic.chapter_data == 0 then
+        fanfic.read = nil
+    end
+    for _, field in ipairs(METADATA_FIELDS) do
+        if metadata[field] ~= nil then
+            fanfic[field] = metadata[field]
+        end
+    end
+    for _, field in ipairs(ACCOUNT_FIELDS) do
+        fanfic[field] = metadata[field]
+    end
+    fanfic.chapter_data = carryReadProgress(fanfic.chapter_data or {}, metadata.chapterData)
+    fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
+    DownloadedFanfics.update(fanfic)
 end
 
 -- Delete a fanfic from the downloaded list
@@ -138,8 +205,8 @@ function DownloadedFanfics.delete(fanficId)
     return true
 end
 
-function DownloadedFanfics.markChapterAsRead(fanficId, chapter_id)
-    downloaded_fanfics[tostring(fanficId)].chapter_data[chapter_id].read = true
+function DownloadedFanfics.markChapterAsRead(fanficId, chapter_index)
+    downloaded_fanfics[tostring(fanficId)].chapter_data[chapter_index].read = true
     DownloadedFanfics.save()
     return deepcopy(downloaded_fanfics[tostring(fanficId)])
 end
