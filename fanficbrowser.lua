@@ -6,7 +6,6 @@ local Config = require("fanfic_config")
 local _ = require("gettext")
 local Cancellable = require("cancellable")
 local AO3WebParser = require("ao3_parser")
-local InfoMessage = require("ui/widget/infomessage")
 local util = require("util")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
@@ -17,8 +16,7 @@ local FanficBrowser = {
     Fanfic = nil,
     browse_window = nil,
     title = nil,
-    fanfics_loaded = nil, -- every work shown so far
-    fetchNextPage = nil, -- nil once AO3 has no more pages
+    pager = nil, -- UIResult.paged pager of the works shown
 }
 
 local BrowseWindow = KeyValuePage:extend{}
@@ -273,10 +271,10 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
     UIManager:show(warningDialog)
 end
 
--- Rebuilds the window from fanfics_loaded on the page it was showing, replacing the old one.
+-- Rebuilds the window from the loaded works on the page it was showing, replacing the old one.
 function FanficBrowser:refresh()
-    local kv_pairs = self:generateTable({}, self.fanfics_loaded)
-    if self.fetchNextPage then
+    local kv_pairs = self:generateTable({}, self.pager.items)
+    if not self.pager.done then
         table.insert(kv_pairs, {
             _("Load more works…"),
             "",
@@ -312,26 +310,15 @@ end
 
 -- The "Load more works…" row sits on the page after the last work, so the first new work lands on that same page.
 FanficBrowser.loadMore = Cancellable.wrap(_("Loading more works…"), function(self)
-    local works = self.fetchNextPage()
-    if not works then
-        return -- error already shown; the row stays for a retry
+    if self.pager:loadMore(_("works")) then
+        self:refresh()
     end
-    if #works == 0 then
-        self.fetchNextPage = nil
-        UIManager:show(InfoMessage:new{ text = _("No more works."), timeout = 2 })
-    end
-    for __, work in ipairs(works) do
-        table.insert(self.fanfics_loaded, work)
-    end
-    self:refresh()
 end)
 
-function FanficBrowser:show(Fanfic, works, fetchNextPage)
+function FanficBrowser:show(Fanfic, pager, total)
     self.Fanfic = Fanfic
-    self.title = T("(%1) Tap fanfic title to download", works.total or "?")
-    works.total = nil
-    self.fanfics_loaded = works
-    self.fetchNextPage = fetchNextPage
+    self.title = T("(%1) Tap fanfic title to download", total or "?")
+    self.pager = pager
     self.browse_window = nil
     self:refresh()
 end

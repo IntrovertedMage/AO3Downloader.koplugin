@@ -126,12 +126,10 @@ end
 -- Shows the works from fetchPage(page), a paged client call, under a Cancel dialog.
 function Fanfic:browse(text, fetchPage, total)
     Cancellable.run(text, function()
-        local works, fetchNextPage = UIResult.paged(fetchPage)
-        if not works then
-            return
+        local pager = UIResult.paged(fetchPage)
+        if pager then
+            FanficBrowser:show(self, pager, pager.items.total or total)
         end
-        works.total = works.total or total
-        FanficBrowser:show(self, works, fetchNextPage)
     end)
 end
 

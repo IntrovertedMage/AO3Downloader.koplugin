@@ -209,7 +209,7 @@ end
 
 -- Shows a paged list of series or collections; tapping one browses its works.
 -- detailRows(item) returns the key/value rows shown under each item's title.
-function AO3UserBrowser:openPagedList(title, items, fetchNextPage, fetchWorks, detailRows)
+function AO3UserBrowser:openPagedList(title, pager, fetchWorks, detailRows)
     local function buildMenu()
         local kv_pairs = { {
             "← Back to profile",
@@ -219,7 +219,7 @@ function AO3UserBrowser:openPagedList(title, items, fetchNextPage, fetchWorks, d
                 self:GoUpInMenu()
             end,
         } }
-        for __, item in ipairs(items) do
+        for __, item in ipairs(pager.items) do
             table.insert(kv_pairs, {
                 item.title,
                 "",
@@ -235,25 +235,16 @@ function AO3UserBrowser:openPagedList(title, items, fetchNextPage, fetchWorks, d
             end
             kv_pairs[#kv_pairs].separator = true
         end
-        if not fetchNextPage then
+        if pager.done then
             return kv_pairs
         end
         table.insert(kv_pairs, {
             T("Load more %1…", title:lower()),
             "",
             callback = Cancellable.wrap(T(_("Loading more %1…"), title:lower()), function()
-                local more = fetchNextPage()
-                if not more then
-                    return -- error already shown; the row stays for a retry
+                if pager:loadMore(title:lower()) then
+                    self:loadPage(title, buildMenu(), true)
                 end
-                if #more == 0 then
-                    fetchNextPage = nil
-                    UIManager:show(InfoMessage:new{ text = T(_("No more %1."), title:lower()), timeout = 2 })
-                end
-                for __, item in ipairs(more) do
-                    table.insert(items, item)
-                end
-                self:loadPage(title, buildMenu(), true)
             end),
         })
         return kv_pairs
@@ -270,13 +261,13 @@ local function withSummary(rows, summary)
 end
 
 AO3UserBrowser.openUserSeriesList = Cancellable.wrap(_("Loading series…"), function(self)
-    local series, fetchNextPage = UIResult.paged(function(page)
+    local pager = UIResult.paged(function(page)
         return AO3DownloaderClient:getUserSeries(self.userData.username, self.userData.pseud, page)
     end)
-    if not series then
+    if not pager then
         return
     end
-    self:openPagedList("Series", series, fetchNextPage, function(id, page)
+    self:openPagedList("Series", pager, function(id, page)
         return AO3DownloaderClient:getWorksFromSeries(id, page)
     end, function(item)
         return withSummary({
@@ -290,13 +281,13 @@ AO3UserBrowser.openUserSeriesList = Cancellable.wrap(_("Loading series…"), fun
 end)
 
 AO3UserBrowser.openUserCollectionsList = Cancellable.wrap(_("Loading collections…"), function(self)
-    local collections, fetchNextPage = UIResult.paged(function(page)
+    local pager = UIResult.paged(function(page)
         return AO3DownloaderClient:getUserCollections(self.userData.username, page)
     end)
-    if not collections then
+    if not pager then
         return
     end
-    self:openPagedList("Collections", collections, fetchNextPage, function(id, page)
+    self:openPagedList("Collections", pager, function(id, page)
         return AO3DownloaderClient:getWorksFromCollection(id, page)
     end, function(item)
         return withSummary({
