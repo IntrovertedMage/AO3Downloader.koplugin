@@ -186,7 +186,8 @@ local function fetch(request)
             cookies_changed = true
         end
 
-        local rate_limited = status == 418 or status == 429
+        -- 418 means AO3 is down, which a retry won't fix, so only 429 waits and retries
+        local rate_limited = status == 429
         if status == 301 and response_headers["location"] and redirects < MAX_REDIRECTS then
             logger.dbg("AO3Downloader.koplugin: Redirecting to new URL: " .. response_headers["location"])
             request.url = response_headers["location"]
