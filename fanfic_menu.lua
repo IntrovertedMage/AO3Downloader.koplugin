@@ -260,9 +260,9 @@ function FanficMenu:onSearchFanficMenu()
 end
 
 function FanficMenu:onShowFanficSearch()
-    FanficSearch:show(Cancellable.wrap(_("Downloading work…"), function(fanficId)
+    FanficSearch:show(function(fanficId)
         self.fanfic:DownloadFanfic(fanficId)
-    end))
+    end)
 end
 
 function FanficMenu:onSelectTag(category)

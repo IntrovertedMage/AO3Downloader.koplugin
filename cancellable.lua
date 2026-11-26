@@ -1,6 +1,6 @@
--- Network actions under a Cancel dialog. A function that starts an action
--- (run/wrap) is a tap target: it returns before the action ends, and it may
--- not be called from inside another action.
+-- Network actions under a Cancel dialog. Started from a tap, run/wrap return
+-- before the action ends; started inside a running action, they just run fn
+-- under that action's dialog and return its results.
 local ButtonDialog = require("ui/widget/buttondialog")
 local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
@@ -15,7 +15,7 @@ local widget -- dialog of the running action, if any
 -- Runs fn as a network action under a Cancel dialog
 function Cancellable.run(text, fn)
     if widget then
-        error("AO3Downloader.koplugin: Cancellable.run inside another action", 2)
+        return fn()
     end
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isConnected() then
@@ -63,7 +63,7 @@ end
 function Cancellable.wrap(text, fn)
     return function(...)
         local args, n = { ... }, select("#", ...)
-        Cancellable.run(text, function()
+        return Cancellable.run(text, function()
             return fn(unpack(args, 1, n))
         end)
     end

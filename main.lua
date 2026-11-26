@@ -153,8 +153,8 @@ local function saveWork(fanfic, metadata)
     return true
 end
 
--- Network work: callers run it under Cancellable (so they can act on the result); returns true once saved.
-function Fanfic:DownloadFanfic(id)
+-- Returns true once saved, when called inside another action (see Cancellable).
+Fanfic.DownloadFanfic = Cancellable.wrap(_("Downloading work…"), function(self, id)
     local metadata = fetchWorkMetadata(id)
     if not metadata then
         return
@@ -176,7 +176,7 @@ function Fanfic:DownloadFanfic(id)
         end,
     })
     return true
-end
+end)
 
 Fanfic.UpdateFanfic = Cancellable.wrap(_("Downloading work…"), function(self, fanfic)
     local metadata = fetchWorkMetadata(fanfic.id)

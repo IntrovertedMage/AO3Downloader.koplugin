@@ -233,6 +233,7 @@ function FanficBrowser:showDownloadDialog(fanfic)
                 {
                     text = "Yes",
                     callback = function()
+                        -- the outer action keeps DownloadFanfic's result, so the list can show it as downloaded
                         Cancellable.run(_("Downloading work…"), function()
                             if self.Fanfic:DownloadFanfic(fanfic.id) then
                                 self:refresh()
