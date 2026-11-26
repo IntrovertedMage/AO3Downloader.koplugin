@@ -197,6 +197,12 @@ function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
         is_borderless = true,
         show_page = set_page,
     })
+    -- KeyValuePage doesn't clamp show_page; the page can shrink once the "Load more" row goes
+    local window = self.AO3UserWindow
+    if window.show_page > math.max(window.pages, 1) then
+        window.show_page = math.max(window.pages, 1)
+        window:_populateItems()
+    end
     self.Fanfic.menu_stack[self.AO3UserWindow] = true
     UIManager:show(self.AO3UserWindow)
 end

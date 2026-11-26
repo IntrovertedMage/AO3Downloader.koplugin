@@ -299,8 +299,10 @@ function FanficBrowser:refresh()
     if window.items_per_page > ITEMS_PER_FIC then
         window.items_per_page = ITEMS_PER_FIC
         window.pages = math.ceil(#kv_pairs / ITEMS_PER_FIC)
-        window:_populateItems()
     end
+    -- reaching the end drops the "Load more works…" row, which was alone on the last page
+    window.show_page = math.max(1, math.min(window.show_page, window.pages))
+    window:_populateItems()
     self.Fanfic.menu_stack[window] = true
     UIManager:show(window)
     if old then
