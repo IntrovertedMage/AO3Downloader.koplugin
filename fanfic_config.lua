@@ -2,7 +2,7 @@
 local DataStorage = require("datastorage")
 local logger = require("logger")
 local DownloadedFanfics = require("downloaded_fanfics")
-local util = require("frontend/util")
+local util = require("util")
 local Paths = require("FanficPaths")
 
 local config_instance = nil
@@ -38,17 +38,6 @@ local function createConfig()
     function config:setup()
         util.makePath(Paths:getHomeDirectory())
         util.makePath(Paths:getHomeDirectory().."/Downloads/")
-        self:setDefault()
-    end
-
-    function config:setDefault()
-        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
-        for setting, value in pairs(self.default_settings) do
-            settings:readSetting(setting, value)
-        end
-        self.updated = true
-        self:onFlushSettings(settings)
-        settings:close()
     end
 
     function config:updateSettingsFile_1()
@@ -74,27 +63,31 @@ local function createConfig()
 
         default =  default or config.default_settings[key]
 
-        local setting = settings:readSetting(key, default)
-        self.updated = true
-        self:onFlushSettings(settings)
-        settings:close()
-        return setting
+        -- no flush: reads must not write
+        return settings:readSetting(key, default)
     end
 
     function config:saveSetting(key, default)
         local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
         settings:saveSetting(key, default)
-        self.updated = true
-        self:onFlushSettings(settings)
         settings:close()
     end
 
-
-    function config:onFlushSettings(settings)
-        if self and self.updated then
-            settings:flush()
-            self.updated = nil
+    -- Removes value from the stored list setting if present, otherwise appends it; returns true when added.
+    function config:toggleInSetting(key, value)
+        local list = self:readSetting(key, {})
+        local index = util.arrayContains(list, value)
+        if index then
+            table.remove(list, index)
+        else
+            table.insert(list, value)
         end
+        self:saveSetting(key, list)
+        return not index
+    end
+
+    function config:getAO3Domain()
+        return self:readSetting("AO3_domain")
     end
 
     return config
