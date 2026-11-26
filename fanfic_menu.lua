@@ -6,7 +6,6 @@ local Config = require("fanfic_config")
 local UIManager = require("ui/uimanager")
 local DownloadedFanficsMenu = require("downloaded_fanfics_menu")
 local ButtonDialog = require("ui/widget/buttondialog")
-local util = require("util")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local FFIUtil = require("ffi/util")
@@ -17,14 +16,7 @@ local MultiInputDialog = require("ui/widget/multiinputdialog")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local DownloadedFanfics = require("downloaded_fanfics")
 
-function util.contains(table, value)
-    for _, v in ipairs(table) do
-        if v == value then
-            return true
-        end
-    end
-    return false
-end
+local contains = require("util").arrayContains
 
 local FanficMenuWidget = Menu:extend({
     fanfic = nil,
@@ -304,19 +296,11 @@ function FanficMenu:onSelectTag(category)
                                 {
                                     text = _(T("Unbookmark %1", category)),
                                     callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(bookmarks) do
-                                            if v == tag then
-                                                table.remove(bookmarks, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting(bookmarkSetting, bookmarks)
+                                        Config:toggleInSetting(bookmarkSetting, tag)
                                         UIManager:show(InfoMessage:new({
                                             text = T("'%1' has been removed from your bookmarks.", tag),
                                         }))
                                         UIManager:close(dialog)
-                                        refreshMenu()                              -- Refresh the menu to update the star
                                         self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
                                         self.menuWidget:updateItems()
                                     end,
@@ -367,7 +351,7 @@ function FanficMenu:onSearchTag(category)
                             -- Show the matching fandoms in a menu
                             local menu_items = {}
                             for __, tag in ipairs(tags) do
-                                local isBookmarked = util.contains(bookmarks, tag.name)
+                                local isBookmarked = contains(bookmarks, tag.name)
                                 local displayText = isBookmarked and T("★ (%1) %2", tag.uses, tag.name)
                                     or T("(%1) %2", tag.uses, tag.name)
 
@@ -392,35 +376,12 @@ function FanficMenu:onSearchTag(category)
                                                             or T("Unbookmark %1", category)
                                                         ),
                                                         callback = function()
-                                                            -- Add the fandom to bookmarks
-                                                            if not isBookmarked then
-                                                                table.insert(bookmarks, tag.name)
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been added to your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            else
-                                                                for i, v in ipairs(bookmarks) do
-                                                                    if v == tag.name then
-                                                                        table.remove(bookmarks, i)
-                                                                        break
-                                                                    end
-                                                                end
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been removed from your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            end
+                                                            local added = Config:toggleInSetting(bookmarkSetting, tag.name)
+                                                            UIManager:show(InfoMessage:new({
+                                                                text = added
+                                                                    and T("'%1' has been added to your bookmarks.", tag.name)
+                                                                    or T("'%1' has been removed from your bookmarks.", tag.name),
+                                                            }))
                                                             UIManager:close(dialog)
                                                             self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
                                                             self.menuWidget:updateItems()
@@ -556,14 +517,7 @@ function FanficMenu:onSelectUserSearch()
                                 {
                                     text = _("Unbookmark User"),
                                     callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(users) do
-                                            if v == user then
-                                                table.remove(users, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting("bookmarkedUsers", users)
+                                        Config:toggleInSetting("bookmarkedUsers", user)
                                         UIManager:show(InfoMessage:new({
                                             text = T("User: '%1' has been removed from your bookmarks.", user),
                                         }))
@@ -637,7 +591,7 @@ function FanficMenu:onSearchUser()
                                                         text = _("Bookmark User"),
                                                         callback = function()
                                                             local users = Config:readSetting("bookmarkedUsers", {})
-                                                            if not util.contains(users, user.username) then
+                                                            if not contains(users, user.username) then
                                                                 table.insert(users, user.username)
                                                                 Config:saveSetting("bookmarkedUsers", users)
                                                                 UIManager:show(InfoMessage:new({
@@ -730,7 +684,21 @@ function FanficMenu:onOpenSettings()
         { text = "Re-sort file paths", call_function = DownloadedFanfics.sortFanfics, type = "Function"},
         { text = "Chapter progress format", setting = "show_current_chapter", type = "Bool", on="First Unread", off="Total Remaining"},
     }
-    local function generateMenuItems()
+    local generateMenuItems -- the saved-setting helpers below call back into it
+
+    local function refreshSettingsMenu()
+        self.menuWidget:switchItemTable(nil, generateMenuItems())
+        self.menuWidget:updateItems()
+    end
+
+    local function confirmSettingSaved(setting)
+        refreshSettingsMenu()
+        UIManager:show(InfoMessage:new{
+            text = T("'%1' updated successfully.", setting.text),
+        })
+    end
+
+    generateMenuItems = function()
         local settings_menu_items = {}
 
         for __, setting in ipairs(settings_options) do
@@ -770,11 +738,7 @@ function FanficMenu:onOpenSettings()
                                             end
                                             Config:saveSetting(setting.setting, newValue)
                                             UIManager:close(inputDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -798,11 +762,7 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             Config:saveSetting(setting.setting, true)
                                             UIManager:close(buttonDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -813,11 +773,7 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             Config:saveSetting(setting.setting, false)
                                             UIManager:close(buttonDialog)
-                                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                                            self.menuWidget:updateItems()
-                                            UIManager:show(InfoMessage:new({
-                                                text = T("'%1' updated successfully.", setting.text),
-                                            }))
+                                            confirmSettingSaved(setting)
                                         end,
                                     },
                                 },
@@ -834,10 +790,8 @@ function FanficMenu:onOpenSettings()
                         local current_path = Config:readSetting(setting.setting)
                         local default_path = filemanagerutil.getDefaultDir()
                         local caller_callback = function(path)
-                            Config:saveSetting(setting.setting, path);
-                            menu_item.text = setting.text .. ": " .. (Config:readSetting(setting.setting) or "")
-                            self.menuWidget:switchItemTable(nil, generateMenuItems())
-                            self.menuWidget:updateItems()
+                            Config:saveSetting(setting.setting, path)
+                            refreshSettingsMenu()
                         end
                         filemanagerutil.showChooseDialog(title_header, caller_callback, current_path, default_path)
                     end

@@ -4,32 +4,16 @@ local InfoMessage = require("ui/widget/infomessage")
 local FanficBrowser = require("fanficbrowser")
 local Config = require("fanfic_config")
 local UIManager = require("ui/uimanager")
-local util = require("util")
 local logger = require("logger")
 local _ = require("gettext")
 
-function util.contains(tableValue, value, comparisonFunction)
-    logger.dbg(tableValue)
-    if comparisonFunction == nil then
-        comparisonFunction = function(v1, v2)
-            return v1 == v2
-        end
-    end
+local util = require("util")
+local contains = util.arrayContains
 
-    for _, v in pairs(tableValue) do
-        if comparisonFunction(v, value) then
-            return true
-        end
-    end
-    return false
-end
-
-function util.remove(tableValue, value)
-    for i, v in ipairs(tableValue) do
-        if v == value then
-            table.remove(tableValue, i)
-            break
-        end
+local function remove(list, value)
+    local i = contains(list, value)
+    if i then
+        table.remove(list, i)
     end
 end
 
@@ -76,8 +60,8 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
     for __, option in pairs(options) do
         table.insert(menu_items, {
             text_func = function()
-                local show_checked = util.contains(self.filter[settingValue], option.value)
-                local show_crossed = util.contains(self.filter[excludeSettingValue], option.value)
+                local show_checked = contains(self.filter[settingValue], option.value)
+                local show_crossed = contains(self.filter[excludeSettingValue], option.value)
                 if show_checked then
                     return "✓ " .. option.text
                 elseif show_crossed then
@@ -87,11 +71,11 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
                 end
             end,
             callback = function()
-                if util.contains(self.filter[settingValue], option.value) then
-                    util.remove(self.filter[settingValue], option.value)
+                if contains(self.filter[settingValue], option.value) then
+                    remove(self.filter[settingValue], option.value)
                     table.insert(self.filter[excludeSettingValue], option.value)
-                elseif util.contains(self.filter[excludeSettingValue], option.value) then
-                    util.remove(self.filter[excludeSettingValue], option.value)
+                elseif contains(self.filter[excludeSettingValue], option.value) then
+                    remove(self.filter[excludeSettingValue], option.value)
                 else
                     table.insert(self.filter[settingValue], option.value)
                 end
@@ -253,7 +237,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     text = "Move to exclude filter",
 
                                     callback = function()
-                                        util.remove(self.filter[settingValue], tag)
+                                        remove(self.filter[settingValue], tag)
                                         table.insert(self.filter[excludeSettingValue], tag)
 
                                         self.menuWidget.item_table = refresh()
@@ -264,7 +248,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                 {
                                     text = "Remove tag",
                                     callback = function()
-                                        util.remove(self.filter[settingValue], tag)
+                                        remove(self.filter[settingValue], tag)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
@@ -296,7 +280,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     text = "Move to include filter",
 
                                     callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
+                                        remove(self.filter[excludeSettingValue], tag)
                                         table.insert(self.filter[settingValue], tag)
 
                                         self.menuWidget.item_table = refresh()
@@ -309,7 +293,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                 {
                                     text = "Remove tag",
                                     callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
+                                        remove(self.filter[excludeSettingValue], tag)
                                         self.menuWidget.item_table = refresh()
                                         self.menuWidget:updateItems(1)
                                         UIManager:close(optionsDialog)
@@ -355,8 +339,8 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
             text_func = function()
-                local show_checked = util.contains(self.filter[settingValue], tag.name)
-                local show_cross = util.contains(self.filter[excludeSettingValue], tag.name)
+                local show_checked = contains(self.filter[settingValue], tag.name)
+                local show_cross = contains(self.filter[excludeSettingValue], tag.name)
                 if show_checked then
                     return "✓ " .. tag.name
                 elseif show_cross then
@@ -366,11 +350,11 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
                 end
             end,
             callback = function()
-                if util.contains(self.filter[settingValue], tag.name) then
-                    util.remove(self.filter[settingValue], tag.name)
+                if contains(self.filter[settingValue], tag.name) then
+                    remove(self.filter[settingValue], tag.name)
                     table.insert(self.filter[excludeSettingValue], tag.name)
-                elseif util.contains(self.filter[excludeSettingValue], tag.name) then
-                    util.remove(self.filter[excludeSettingValue], tag.name)
+                elseif contains(self.filter[excludeSettingValue], tag.name) then
+                    remove(self.filter[excludeSettingValue], tag.name)
                 else
                     table.insert(self.filter[settingValue], tag.name)
                 end
@@ -531,6 +515,55 @@ function CustomFilterMenu:refreshMainMenu()
     return menuOptions
 end
 
+-- The crafter menu is identical in create and edit mode apart from the save
+-- actions, so both modes share this builder.
+function CustomFilterMenu:crafterMenuOptions(save_actions)
+    local options = {
+        {
+            text_func = function()
+                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
+            end,
+            callback = function()
+                self:selectMainTag()
+            end,
+        },
+        {
+            text = "Work Info filters \u{23F5}",
+            callback = function()
+                self:WorkInfoSubmenu()
+            end,
+        },
+        {
+            text = "Work Tags filters \u{23F5}",
+            callback = function()
+                self:WorkTagsSubmenu()
+            end,
+        },
+        {
+            text = "Work Stats filters \u{23F5}",
+            callback = function()
+                self:WorkStatSubmenu()
+            end,
+        },
+        {
+            text = "Search Order filters \u{23F5}",
+            callback = function()
+                self:WorkOrderSubmenu()
+            end,
+        },
+    }
+    for __, action in ipairs(save_actions) do
+        table.insert(options, action)
+    end
+    table.insert(options, {
+        text = "\u{f002} Execute Search",
+        callback = function()
+            self:executeSearch()
+        end,
+    })
+    return options
+end
+
 function CustomFilterMenu:FilterCrafter()
     -- Initialize filter options
     self.filter = {
@@ -564,91 +597,20 @@ function CustomFilterMenu:FilterCrafter()
         sort_direction = nil,
     }
 
-    local filterMenuOptions = {
-        {
-            text_func = function()
-                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
-            end,
-            callback = function()
-                self:selectMainTag()
-            end,
-        },
-        {
-            text = "Work Info filters \u{23F5}",
-            callback = function()
-                self:WorkInfoSubmenu()
-            end,
-        },
-        {
-            text = "Work Tags filters \u{23F5}",
-            callback = function()
-                self:WorkTagsSubmenu()
-            end,
-        },
-        {
-            text = "Work Stats filters \u{23F5}",
-            callback = function()
-                self:WorkStatSubmenu()
-            end,
-        },
-        {
-            text = "Search Order filters \u{23F5}",
-            callback = function()
-                self:WorkOrderSubmenu()
-            end,
-        },
+    self.menuWidget:GoDownInMenu("Create filter", self:crafterMenuOptions({
         {
             text = "\u{2193} Save current filter",
             callback = function()
                 self:SaveFilters()
             end,
         },
-        {
-            text = "\u{f002} Execute Search",
-            callback = function()
-                self:executeSearch()
-            end,
-        },
-    }
-
-    self.menuWidget:GoDownInMenu("Create filter", filterMenuOptions)
+    }))
 end
 
 function CustomFilterMenu:UpdateFilterCrafter(filter)
     self.filter = deepcopy(filter.parameters)
-    local filterMenuOptions = {
-        {
-            text_func = function()
-                return "Main tag (Required): " .. (self.filter["main_tag"] or "None")
-            end,
-            callback = function()
-                self:selectMainTag()
-            end,
-        },
-        {
-            text = "Work Info filters \u{23F5}",
-            callback = function()
-                self:WorkInfoSubmenu()
-            end,
-        },
-        {
-            text = "Work Tags filters \u{23F5}",
-            callback = function()
-                self:WorkTagsSubmenu()
-            end,
-        },
-        {
-            text = "Work Stats filters \u{23F5}",
-            callback = function()
-                self:WorkStatSubmenu()
-            end,
-        },
-        {
-            text = "Search Order filters \u{23F5}",
-            callback = function()
-                self:WorkOrderSubmenu()
-            end,
-        },
+
+    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title, self:crafterMenuOptions({
         {
             text = "\u{2193} Save as current filter",
             callback = function()
@@ -683,15 +645,7 @@ function CustomFilterMenu:UpdateFilterCrafter(filter)
                 self:SaveFilters()
             end,
         },
-        {
-            text = "\u{f002} Execute Search",
-            callback = function()
-                self:executeSearch()
-            end,
-        },
-    }
-
-    self.menuWidget:GoDownInMenu("Edit filter: " .. filter.title, filterMenuOptions)
+    }))
 end
 
 function CustomFilterMenu:selectMainTag()
