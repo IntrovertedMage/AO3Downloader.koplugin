@@ -8,6 +8,7 @@ local DownloadedFanfics = {}
 
 local history_file_path = Paths.getHomeDirectory() .. "/fanfic_history.json"
 local downloaded_fanfics = {}
+local save_blocked = false -- set when an unreadable history file couldn't be backed up
 
 -- From: http://lua-users.org/wiki/CopyTable
 local function deepcopy(orig, copies)
@@ -93,13 +94,22 @@ end
 
 -- Save the downloaded fanfic history to a file
 function DownloadedFanfics.save()
+    if save_blocked then
+        logger.err("Not saving fanfic history: the existing file is unreadable and has no backup")
+        return
+    end
+    local content, encode_err = json.encode(downloaded_fanfics, { pretty = true })
+    if not content then
+        logger.err("Failed to encode fanfic history:", encode_err)
+        return
+    end
+
     local file, err = io.open(history_file_path, "w")
     if not file then
         logger.err("Failed to save fanfic history:", err)
         return
     end
 
-    local content = json.encode(downloaded_fanfics, { pretty = true })
     file:write(content)
     file:close()
     logger.dbg("Fanfic history saved successfully.")
@@ -130,9 +140,14 @@ function DownloadedFanfics.load()
     local content = file:read("*a")
     file:close()
 
-    local history, err = json.decode(content)
-    if not history then
-        logger.err("Failed to load fanfic history:", err)
+    local ok, history, decode_err = pcall(json.decode, content)
+    if not ok or type(history) ~= "table" then
+        -- set the unreadable file aside, or the next save would overwrite it with an empty history
+        local backup_path = history_file_path .. "." .. os.date("%Y%m%d-%H%M%S") .. ".bak"
+        local renamed, rename_err = os.rename(history_file_path, backup_path)
+        save_blocked = not renamed
+        logger.err("Failed to load fanfic history:", ok and decode_err or history,
+            renamed and ("kept as " .. backup_path) or ("and could not back it up: " .. tostring(rename_err)))
         return
     end
 
