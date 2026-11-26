@@ -469,7 +469,7 @@ function CustomFilterMenu:refreshMainMenu()
         },
     }
     local filters = Config:readSetting("saved_filters", {})
-    if #filters > 0 then
+    if next(filters) ~= nil then -- keyed by title, so # is always 0
         table.insert(menuOptions, {
             text = "Saved filters:",
         })
@@ -973,7 +973,7 @@ function CustomFilterMenu:WorkInfoSubmenu()
                 return "Word Count: " .. (self.filter.word_count or "Any")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectComments()
             end,
         },
         {
@@ -1027,7 +1027,7 @@ function CustomFilterMenu:WorkStatSubmenu()
                 return "Comments: " .. (self.filter.comments or "any amount")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectBookmarks()
             end,
         },
         {
@@ -1164,7 +1164,7 @@ function CustomFilterMenu:selectRating()
         },
         {
             text = "Teen and Up Audiences",
-            value = "1q",
+            value = "11",
         },
         {
             text = "Mature",
@@ -1343,7 +1343,7 @@ function CustomFilterMenu:selectSortBy()
         },
         {
             text = "Comments",
-            value = "comment_count",
+            value = "comments_count",
         },
         {
             text = "Bookmarks",
