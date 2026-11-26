@@ -17,6 +17,7 @@ local AO3DownloaderClient = require("AO3_downloader_client")
 local Cancellable = require("cancellable")
 local UIResult = require("ui_result")
 local util = require("util")
+local lfs = require("libs/libkoreader-lfs")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -25,6 +26,25 @@ local Fanfic = WidgetContainer:extend{
 }
 
 local unwrap = UIResult.unwrap
+
+local stale_part_files_checked = false
+
+-- Delete leftover ".part" files from cancelled or killed EPUB downloads.
+local function removeStalePartFiles()
+    if stale_part_files_checked then
+        return
+    end
+    stale_part_files_checked = true
+    local folder = Config:readSetting("fanfic_folder_path")
+    if lfs.attributes(folder, "mode") ~= "directory" then
+        return
+    end
+    for name in lfs.dir(folder) do
+        if name:match("%.epub%.part$") then
+            os.remove(folder .. "/" .. name)
+        end
+    end
+end
 
 function Fanfic:init()
     if self.ui.name == "ReaderUI" then
@@ -36,6 +56,7 @@ function Fanfic:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     DownloadedFanfics.load() -- Load fanfic history
+    removeStalePartFiles()
 end
 
 function Fanfic:addToMainMenu(menu_items)

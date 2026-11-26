@@ -198,12 +198,27 @@ function AO3DownloaderClient:downloadEpub(download_link, filepath)
         return nil, T("Invalid or missing URL for EPUB download: %1", tostring(download_link))
     end
 
-    local result = HTTPQueryHandler.get(download_link, {
+    -- download beside the target so a failed or cancelled download never clobbers an existing EPUB;
+    -- pcall only to delete the partial file, then re-raise so a cancel still unwinds
+    local part_path = filepath .. ".part"
+    local ok, result = pcall(HTTPQueryHandler.get, download_link, {
         headers = { ["Accept"] = "application/epub+zip" },
-        filepath = filepath,
+        filepath = part_path,
     })
+    if not ok then
+        os.remove(part_path)
+        error(result, 0)
+    end
+
     if not result.success then
+        os.remove(part_path)
         return failure("Failed to download EPUB.", result)
+    end
+
+    local renamed, err = os.rename(part_path, filepath)
+    if not renamed then
+        os.remove(part_path)
+        return nil, T("Failed to save EPUB. Error: %1", tostring(err))
     end
 
     return filepath

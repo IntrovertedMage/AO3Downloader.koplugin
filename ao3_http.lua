@@ -143,12 +143,13 @@ function HTTPQueryHandler.withQuery(url, fields)
 end
 
 local MAX_ATTEMPTS = 3
+local MAX_REDIRECTS = 5
 
 -- Runs in the request subprocess: returns the result (with the cookie jar if it changed) and the body.
 local function fetch(request)
     local response, status, response_headers, buffer
     local cookies_changed = false
-    local attempt = 1
+    local attempt, redirects = 1, 0
 
     if request.body then
         request.headers["Content-Length"] = tostring(#request.body)
@@ -185,13 +186,23 @@ local function fetch(request)
             cookies_changed = true
         end
 
-        if status == 301 and response_headers["location"] then
+        local rate_limited = status == 418 or status == 429
+        if status == 301 and response_headers["location"] and redirects < MAX_REDIRECTS then
             logger.dbg("AO3Downloader.koplugin: Redirecting to new URL: " .. response_headers["location"])
             request.url = response_headers["location"]
+            redirects = redirects + 1
             attempt = 1
-        elseif (response == 1 and status ~= 418) or attempt >= MAX_ATTEMPTS then
+        -- a POST that failed in transport may have reached the server, so never resend it
+        elseif (response == 1 and not rate_limited) or attempt >= MAX_ATTEMPTS
+            or (response ~= 1 and request.method ~= "GET") then
             break
         else
+            if rate_limited then
+                local retry_after = tonumber(response_headers and response_headers["retry-after"])
+                local wait = math.min(retry_after or (2 ^ attempt), 10)
+                logger.dbg("AO3Downloader.koplugin: Rate limited (" .. status .. "), retrying in " .. wait .. "s")
+                FFIUtil.sleep(wait)
+            end
             attempt = attempt + 1
         end
     end
