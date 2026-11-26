@@ -1434,7 +1434,7 @@ function CustomFilterMenu:executeSearch()
     end)
 
     UIManager:show(InfoMessage:new({
-        text = _("Searching with custom filter..."),
+        text = _("Searching with custom filter…"),
         timeout = 1,
     }))
 end

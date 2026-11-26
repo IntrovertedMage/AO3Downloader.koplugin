@@ -93,7 +93,7 @@ function encodeHelper:generateParametersStringForm(params)
 end
 
 function AO3DownloaderClient:requestAO3Token()
-    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token...")
+    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token…")
     local tokenRequestURL = getAO3URL() .. "/token_dispenser.json"
 
     local response_body = {}
@@ -120,10 +120,10 @@ function AO3DownloaderClient:requestAO3Token()
 
     local html_body = table.concat(response_body)
 
-    local json = require("dkjson")
-    local success, token_data = pcall(json.decode, html_body)
+    local json = require("rapidjson")
+    local token_data = json.decode(html_body) -- rapidjson returns nil on bad JSON, it doesn't raise
 
-    if not success then
+    if not token_data then
         return {
             success = false,
             error = T("Failed to parse AO3 token response."),
@@ -235,7 +235,7 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
 end
 
 function AO3DownloaderClient:endLoggedInSession()
-    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session...")
+    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session…")
     local authenticity_token = self:requestAO3Token()
 
     if not authenticity_token.success then
@@ -306,7 +306,7 @@ function AO3DownloaderClient:endLoggedInSession()
 end
 
 function AO3DownloaderClient:GetSessionStatus()
-    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status...")
+    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status…")
     local homepage_url = getAO3URL()
     local response_body = {}
 
@@ -1063,10 +1063,10 @@ function AO3DownloaderClient:searchForCollections(search_query)
     end
 
     local results = table.concat(response_body)
-    local json = require("dkjson")
-    local success, collection_results = pcall(json.decode, results)
+    local json = require("rapidjson")
+    local collection_results = json.decode(results)
 
-    if not success then
+    if not collection_results then
         return {
             success = false,
             error = T("Failed to parse collection search results."),
@@ -1415,8 +1415,8 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
     local response_text = table.concat(response_body)
 
     if result.status == 201 then
-        local json = require("dkjson")
-        local decoded, _, err = json.decode(response_text)
+        local json = require("rapidjson")
+        local decoded = json.decode(response_text)
 
         if decoded then
             return {
@@ -1616,7 +1616,8 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
 
         return {
             success = true,
-            bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
+            bookmark_id = result.response_headers and result.response_headers["location"]
+                and result.response_headers["location"]:match("/bookmarks/(%d+)")
         }
     end
 
@@ -2726,11 +2727,7 @@ function HTTPQueryHandler:getCookies(custom_cookies, url)
     self:loadCookiesFromConfig()
     local cookieHeader = {}
     local request_domain = url:match("^(https?://[^/]+)")
-    local cookies_for_this_domain = self.cookies[request_domain];
-
-    if cookies_for_this_domain == nil then
-        return "";
-    end
+    local cookies_for_this_domain = self.cookies[request_domain] or {}
 
     for __, cookie in pairs(cookies_for_this_domain) do
         table.insert(cookieHeader, T("%1=%2", cookie.name, cookie.value))
@@ -2764,7 +2761,7 @@ end
 
 function HTTPQueryHandler.get_default_headers()
     return {
-        ["User-Agent"] = "Mozilla/5.0 (platform; rv:gecko-version) Gecko/gecko-trail Firefox/firefox-version",
+        ["User-Agent"] = "AO3Downloader.koplugin (KOReader; +https://github.com/IntrovertedMage/AO3Downloader.koplugin)",
         ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         ["Accept-Language"] = "en-US,en;q=0.5",
         ["Sec-GPC"] = 1,

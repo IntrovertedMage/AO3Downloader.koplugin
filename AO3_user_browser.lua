@@ -307,7 +307,7 @@ function AO3UserBrowser:openUserSeriesList()
             end
 
             table.insert(series_menu_kv, {
-                "Load more series...",
+                "Load more series…",
                 "",
                 callback = function()
                     local extra_series_list = getNextPage()
@@ -398,7 +398,7 @@ function AO3UserBrowser:openUserCollectionsList()
             end
 
             table.insert(collections_menu_kv, {
-                "Load more collections...",
+                "Load more collections…",
                 "",
                 callback = function()
                     local extra_collections_list = getNextPage()

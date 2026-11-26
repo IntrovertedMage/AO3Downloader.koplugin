@@ -1,4 +1,4 @@
-local json = require("dkjson")
+local json = require("rapidjson")
 local Paths = require("FanficPaths")
 local logger = require("logger")
 local ffiUtil = require("ffi/util")
@@ -50,7 +50,7 @@ function DownloadedFanfics.save()
         return
     end
 
-    local content = json.encode(downloaded_fanfics, { indent = true })
+    local content = json.encode(downloaded_fanfics, { pretty = true })
     file:write(content)
     file:close()
     logger.dbg("Fanfic history saved successfully.")
@@ -81,7 +81,7 @@ function DownloadedFanfics.load()
     local content = file:read("*a")
     file:close()
 
-    local history, _, err = json.decode(content)
+    local history, err = json.decode(content)
     if not history then
         logger.err("Failed to load fanfic history:", err)
         return

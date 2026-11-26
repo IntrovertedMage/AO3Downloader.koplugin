@@ -503,7 +503,7 @@ function FanficMenu:onBrowseByTag(selectedTag)
         })
     end
 
-    self.menuWidget:GoDownInMenu("Sort by...", menu_items)
+    self.menuWidget:GoDownInMenu("Sort by…", menu_items)
 end
 
 function FanficMenu:onViewDownloadedFanfics()
@@ -857,7 +857,7 @@ function FanficMenu:onOpenSettings()
                                         callback = function()
                                             UIManager:close(dialog)
                                             local notice = InfoMessage:new{
-                                                text = T("Carrying out task '%1' may take some time...", setting.text);
+                                                text = T("Carrying out task '%1'…", setting.text);
                                             }
                                             UIManager:scheduleIn(1, function()
 
