@@ -13,22 +13,6 @@ local Config = require("fanfic_config")
 
 local DownloadedFanficsMenu = {}
 
--- Helper function to normalize a field to always be a table
-local function normalizeField(field)
-    if type(field) == "string" then
-        -- Split the string by commas and trim whitespace
-        local result = {}
-        for item in string.gmatch(field, "([^,]+)") do
-            table.insert(result, util.trim(item))
-        end
-        return result
-    elseif type(field) == "table" then
-        return field -- Already a table
-    else
-        return {}    -- Default to an empty table
-    end
-end
-
 function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
     self.Fanfic = Fanfic
 
@@ -39,13 +23,6 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                 text = "No fanfics downloaded yet.",
             }))
             return
-        end
-
-        -- Normalize relationships, characters, and tags for each fanfic
-        for _, fanfic in pairs(downloaded_fanfics) do
-            fanfic.relationships = normalizeField(fanfic.relationships)
-            fanfic.characters = normalizeField(fanfic.characters)
-            fanfic.tags = normalizeField(fanfic.tags)
         end
 
         -- Group fanfics by fandom and track the most recent `last_accessed` timestamp

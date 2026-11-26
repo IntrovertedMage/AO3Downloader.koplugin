@@ -25,22 +25,6 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         return DownloadedFanfics.checkIfStored(fanficId)
     end
 
-    -- Helper function to normalize a field to always be a table
-    local function normalizeField(field)
-        if type(field) == "string" then
-            -- Split the string by commas and trim whitespace
-            local result = {}
-            for item in string.gmatch(field, "([^,]+)") do
-                table.insert(result, util.trim(item))
-            end
-            return result
-        elseif type(field) == "table" then
-            return field -- Already a table
-        else
-            return {} -- Default to an empty table
-        end
-    end
-
     -- Populate the initial list of fanfics
     for __, v in pairs(ficResults) do
         if __ == "total" then
@@ -55,11 +39,6 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             table.insert(kv_pairs, { "", "", separator = true })
             goto continue
         end
-        -- Normalize relationships, characters, and tags
-        v.relationships = normalizeField(v.relationships)
-        v.characters = normalizeField(v.characters)
-        v.tags = normalizeField(v.tags)
-
         -- Check if the fanfic is already downloaded
         local downloadedFanfic = isDownloaded(v.id)
         local title = v.title
@@ -384,7 +363,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     self.items_per_fic = 14
     -- Create the KeyValuePage
     self.browse_window = BrowseWindow:new({
-        title = T("(%1) Tap fanfic title to download", total_fic_count or "ERROR"),
+        title = T("(%1) Tap fanfic title to download", total_fic_count or "?"),
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,

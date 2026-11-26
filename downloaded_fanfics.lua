@@ -31,15 +31,31 @@ local function deepcopy(orig, copies)
     return copy
 end
 
--- Helper function to ensure a field is always a table
+-- Placeholders older versions stored in place of an empty tag list.
+local TAG_PLACEHOLDERS = { ["N/A"] = true, ["No tags available"] = true }
+
+-- Returns field as a list of trimmed items. Older records stored "a, b" or { "a, b" };
+-- splitting on commas is safe because AO3 tags can't contain them.
 local function normalizeField(field)
-    if type(field) == "string" then
-        return { field } -- Convert single string to a table
-    elseif type(field) == "table" then
-        return field     -- Already a table
-    else
-        return {}        -- Default to an empty table
+    local items = {}
+    for _, value in ipairs(type(field) == "table" and field or { field }) do
+        for item in tostring(value):gmatch("[^,]+") do
+            item = item:match("^%s*(.-)%s*$")
+            if item ~= "" and not TAG_PLACEHOLDERS[item] then
+                table.insert(items, item)
+            end
+        end
     end
+    return items
+end
+
+-- Normalizes a fanfic record's fields to the shapes the rest of the code expects.
+local function normalizeFanfic(fanfic)
+    fanfic.id = tostring(fanfic.id)
+    fanfic.fandoms = normalizeField(fanfic.fandoms)
+    fanfic.relationships = normalizeField(fanfic.relationships)
+    fanfic.characters = normalizeField(fanfic.characters)
+    fanfic.tags = normalizeField(fanfic.tags)
 end
 
 -- Save the downloaded fanfic history to a file
@@ -89,11 +105,7 @@ function DownloadedFanfics.load()
 
     -- Normalize fields for all loaded fanfics
     for _, fanfic in pairs(history) do
-        fanfic.id = tostring(fanfic.id)
-        fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
-        fanfic.relationships = normalizeField(fanfic.relationships)
-        fanfic.characters = normalizeField(fanfic.characters)
-        fanfic.tags = normalizeField(fanfic.tags)
+        normalizeFanfic(fanfic)
     end
 
     downloaded_fanfics = history
@@ -107,20 +119,14 @@ end
 
 -- Add a new fanfic to the downloaded list
 function DownloadedFanfics.add(fanfic)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
+    normalizeFanfic(fanfic)
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     DownloadedFanfics.save()
 end
 
 -- Update an existing fanfic in the downloaded list
 function DownloadedFanfics.update(fanfic, notSave)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
+    normalizeFanfic(fanfic)
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     if notSave then
         return

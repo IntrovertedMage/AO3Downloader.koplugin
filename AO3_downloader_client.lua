@@ -318,8 +318,10 @@ function AO3DownloaderClient:getWorkMetadata(work_id)
     local body = table.concat(response_body)
     local html_root = htmlparser.parse(body)
 
-    local work_metadata = AO3WebParser:parseWorkPage(html_root);
+    local work_metadata = AO3WebParser.parseWorkPage(html_root);
     work_metadata.id = work_id
+    work_metadata.epub_link = work_metadata.epub_href and getAO3URL() .. work_metadata.epub_href
+    work_metadata.epub_href = nil
 
     return {
         success = true,
@@ -413,7 +415,7 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     local html_body = table.concat(response_body)
 
     local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local works = AO3WebParser.parseWorkSearchResults(root)
 
     return {
         success = true,
@@ -455,7 +457,7 @@ function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
     local html_body = table.concat(response_body)
 
     local root = htmlparser.parse(html_body)
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local works = AO3WebParser.parseWorkSearchResults(root)
 
     return {
         success = true,
@@ -504,7 +506,7 @@ function AO3DownloaderClient:searchForTags(search_query, tag_type)
 
     local html_root = htmlparser.parse(body)
 
-    local fandoms = AO3WebParser:parseTagSearchResults(html_root)
+    local fandoms = AO3WebParser.parseTagSearchResults(html_root)
 
 
     return {
@@ -539,7 +541,7 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local works = AO3WebParser.parseWorkSearchResults(root)
 
     return {
         success = true,
@@ -572,7 +574,7 @@ function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local works = AO3WebParser:parseWorkSearchResults(root)
+    local works = AO3WebParser.parseWorkSearchResults(root)
 
     return {
         success = true,
@@ -632,9 +634,9 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
     local works = nil
 
     if catagory == "bookmarks" then
-        works = AO3WebParser:parseUserBookmarks(root)
+        works = AO3WebParser.parseUserBookmarks(root)
     else
-         works = AO3WebParser:parseWorkSearchResults(root)
+         works = AO3WebParser.parseWorkSearchResults(root)
     end
 
     return {
@@ -704,7 +706,7 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
 
     local works = nil
 
-    works = AO3WebParser:parseAccountHistory(root)
+    works = AO3WebParser.parseAccountHistory(root)
 
     return {
         success = true,
@@ -738,7 +740,7 @@ function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local series = AO3WebParser:parseUserSeriesPage(root)
+    local series = AO3WebParser.parseUserSeriesPage(root)
 
     return {
         success = true,
@@ -771,7 +773,7 @@ function AO3DownloaderClient:getUserCollections(username, page_no)
 
     local root = htmlparser.parse(html_body)
 
-    local collections = AO3WebParser:parseUserCollectionsPage(root)
+    local collections = AO3WebParser.parseUserCollectionsPage(root)
 
     return {
         success = true,
@@ -809,7 +811,7 @@ function AO3DownloaderClient:getUserData(username, pseud)
     local html_body = table.concat(response_body)
 
     local root = htmlparser.parse(html_body)
-    local user_data = AO3WebParser:parseUserPage(root)
+    local user_data = AO3WebParser.parseUserPage(root)
     user_data.username = username
 
     return {
@@ -847,7 +849,7 @@ function AO3DownloaderClient:getUserPseuds(username)
 
     local html_body = table.concat(response_body)
     local root = htmlparser.parse(html_body)
-    local pseuds = AO3WebParser:parseUserPseuds(root)
+    local pseuds = AO3WebParser.parseUserPseuds(root)
 
     return {
         success = true,
@@ -883,7 +885,7 @@ function AO3DownloaderClient:getAccountPseudID(username)
 
     local html_body = table.concat(response_body)
     local root = htmlparser.parse(html_body)
-    local pseud_id = AO3WebParser:parseAccountPseudID(root)
+    local pseud_id = AO3WebParser.parseAccountPseudID(root)
 
     if not pseud_id then
         return {
@@ -938,7 +940,7 @@ function AO3DownloaderClient:searchForUsers(search_query, page_no)
     local body = table.concat(response_body)
     local html_root = htmlparser.parse(body)
 
-    local users = AO3WebParser:parseUserSearchResults(html_root)
+    local users = AO3WebParser.parseUserSearchResults(html_root)
 
     return {
         success = true,
@@ -1436,7 +1438,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
 
     local root = htmlparser.parse(html_body)
 
-    local bookmark_data = AO3WebParser:parseUsersWorkBookmark(root)
+    local bookmark_data = AO3WebParser.parseUsersWorkBookmark(root)
 
     return {
         success = true,
