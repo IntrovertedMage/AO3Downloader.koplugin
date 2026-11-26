@@ -1,6 +1,6 @@
 -- Every public method returns its value on success, or nil and an error message.
 -- Methods make requests, so they must run inside Cancellable.run (one action at a time);
--- calling one outside raises.
+-- calling one outside raises, and a cancel unwinds them by throwing Cancellable.CANCELLED.
 local logger = require("logger")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template

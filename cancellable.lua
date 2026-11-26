@@ -1,16 +1,20 @@
--- Network actions under a wait message. A function that starts an action
+-- Network actions under a Cancel dialog. A function that starts an action
 -- (run/wrap) is a tap target: it returns before the action ends, and it may
 -- not be called from inside another action.
-local InfoMessage = require("ui/widget/infomessage")
+local ButtonDialog = require("ui/widget/buttondialog")
+local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
+local _ = require("gettext")
 
-local Cancellable = {}
+local Cancellable = {
+    CANCELLED = {},
+}
 
-local running = false
+local widget -- dialog of the running action, if any
 
--- Runs fn as a network action under a wait message
+-- Runs fn as a network action under a Cancel dialog
 function Cancellable.run(text, fn)
-    if running then
+    if widget then
         error("AO3Downloader.koplugin: Cancellable.run inside another action", 2)
     end
     local NetworkMgr = require("ui/network/manager")
@@ -20,16 +24,40 @@ function Cancellable.run(text, fn)
         end)
         return
     end
-    local message = InfoMessage:new{ text = text }
-    UIManager:show(message)
-    UIManager:forceRePaint()
-    running = true
-    local ok, err = xpcall(fn, debug.traceback)
-    running = false
-    UIManager:close(message)
-    if not ok then
-        error(err, 0)
-    end
+    Trapper:wrap(function()
+        local dialog
+        local cancelled = false
+        dialog = ButtonDialog:new{
+            title = text,
+            dismissable = false,
+            buttons = { { {
+                text = _("Cancel"),
+                callback = function()
+                    cancelled = true
+                    UIManager:close(dialog)
+                    -- Trapper sets dismiss_callback per Cancellable.call and never clears it; still safe,
+                    -- because taps are only dispatched while a call is yielding, so it's always current
+                    if dialog.dismiss_callback then
+                        dialog.dismiss_callback()
+                    end
+                end,
+            } } },
+        }
+        UIManager:show(dialog)
+        UIManager:forceRePaint()
+        widget = dialog
+        -- traceback taken before unwinding, so Trapper's log points at the real error
+        local ok, err = xpcall(fn, function(e)
+            return e == Cancellable.CANCELLED and e or debug.traceback(e)
+        end)
+        widget = nil
+        if not cancelled then
+            UIManager:close(dialog)
+        end
+        if not ok and err ~= Cancellable.CANCELLED then
+            error(err, 0)
+        end
+    end)
 end
 
 function Cancellable.wrap(text, fn)
@@ -41,12 +69,17 @@ function Cancellable.wrap(text, fn)
     end
 end
 
--- Runs a request; only valid inside Cancellable.run.
+-- Runs fn in a subprocess the Cancel dialog can kill. Only fn's first two
+-- return values come back; capture more here if a caller ever needs them.
 function Cancellable.call(fn)
-    if not running then
+    if not widget then
         error("AO3Downloader.koplugin: request outside Cancellable.run", 2)
     end
-    return fn()
+    local completed, a, b = Trapper:dismissableRunInSubprocess(fn, widget)
+    if not completed then
+        error(Cancellable.CANCELLED, 0)
+    end
+    return a, b
 end
 
 return Cancellable
