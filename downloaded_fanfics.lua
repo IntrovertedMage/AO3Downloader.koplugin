@@ -58,6 +58,39 @@ local function normalizeFanfic(fanfic)
     fanfic.tags = normalizeField(fanfic.tags)
 end
 
+-- Metadata fields copied from a fresh work page onto a downloaded work's record.
+local METADATA_FIELDS = {
+    "title", "author", "chapters", "summary", "fandoms", "tags", "relationships",
+    "characters", "warnings", "hits", "kudos", "bookmarks", "comments", "rating",
+    "category", "iswip", "updated", "published", "wordcount",
+}
+
+-- Account-state fields: always taken from the fresh page, never merged with stored values.
+local ACCOUNT_FIELDS = {
+    "markedForLater", "subscriptionID", "bookmarkID", "bookmarkContent",
+}
+
+-- Returns chapters with read flags carried over from old_chapters: matched by chapter id
+-- (so an inserted chapter doesn't shift progress), by position for records without ids.
+local function carryReadProgress(old_chapters, chapters)
+    local old_by_id = {}
+    for _, chapter in ipairs(old_chapters) do
+        if chapter.id then
+            old_by_id[chapter.id] = chapter
+        end
+    end
+    for idx, chapter in ipairs(chapters) do
+        local old
+        if chapter.id and next(old_by_id) then
+            old = old_by_id[chapter.id]
+        else
+            old = old_chapters[idx]
+        end
+        chapter.read = old and old.read or false
+    end
+    return chapters
+end
+
 -- Save the downloaded fanfic history to a file
 function DownloadedFanfics.save()
     local file, err = io.open(history_file_path, "w")
@@ -117,21 +150,34 @@ function DownloadedFanfics.getAll()
     return deepcopy(downloaded_fanfics)
 end
 
--- Add a new fanfic to the downloaded list
-function DownloadedFanfics.add(fanfic)
-    normalizeFanfic(fanfic)
-    downloaded_fanfics[tostring(fanfic.id)] = fanfic
-    DownloadedFanfics.save()
-end
-
 -- Update an existing fanfic in the downloaded list
 function DownloadedFanfics.update(fanfic, notSave)
     normalizeFanfic(fanfic)
-    downloaded_fanfics[tostring(fanfic.id)] = fanfic
+    downloaded_fanfics[fanfic.id] = fanfic
     if notSave then
         return
     end
     DownloadedFanfics.save()
+end
+
+-- Refreshes fanfic's record from freshly downloaded work metadata and saves it.
+-- Nil metadata fields keep the stored value; read progress carries over.
+function DownloadedFanfics.storeDownload(fanfic, metadata)
+    -- a whole-work read flag is stale once per-chapter data exists
+    if fanfic.chapter_data and #fanfic.chapter_data == 0 then
+        fanfic.read = nil
+    end
+    for _, field in ipairs(METADATA_FIELDS) do
+        if metadata[field] ~= nil then
+            fanfic[field] = metadata[field]
+        end
+    end
+    for _, field in ipairs(ACCOUNT_FIELDS) do
+        fanfic[field] = metadata[field]
+    end
+    fanfic.chapter_data = carryReadProgress(fanfic.chapter_data or {}, metadata.chapterData)
+    fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
+    DownloadedFanfics.update(fanfic)
 end
 
 -- Delete a fanfic from the downloaded list
@@ -144,8 +190,8 @@ function DownloadedFanfics.delete(fanficId)
     return true
 end
 
-function DownloadedFanfics.markChapterAsRead(fanficId, chapter_id)
-    downloaded_fanfics[tostring(fanficId)].chapter_data[chapter_id].read = true
+function DownloadedFanfics.markChapterAsRead(fanficId, chapter_index)
+    downloaded_fanfics[tostring(fanficId)].chapter_data[chapter_index].read = true
     DownloadedFanfics.save()
     return deepcopy(downloaded_fanfics[tostring(fanficId)])
 end

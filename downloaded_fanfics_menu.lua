@@ -4,7 +4,6 @@ local TextViewer = require("ui/widget/textviewer")
 local util = require("util")
 local logger = require("logger")
 local DownloadedFanfics = require("downloaded_fanfics")
-local FanficReader = require("fanfic_reader")
 local _ = require("gettext")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
@@ -13,7 +12,7 @@ local Config = require("fanfic_config")
 
 local DownloadedFanficsMenu = {}
 
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
+function DownloadedFanficsMenu:show(ui, parentMenu, Fanfic)
     self.Fanfic = Fanfic
 
     local function refreshDownloadMenu()
@@ -154,17 +153,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                             {
                                                 text = _("Update"),
                                                 callback = function()
-                                                    UIManager:scheduleIn(1, function()
-                                                        -- Update the fanfic
-                                                        updateFanficCallback(fanfic)
-                                                        UIManager:close(dialog)
-                                                    end)
-                                                    UIManager:show(InfoMessage:new({
-                                                        text = _("Downloading work may take some time…"),
-                                                        timeout = 1,
-                                                    }))
+                                                    self.Fanfic:UpdateFanfic(fanfic)
+                                                    UIManager:close(dialog)
                                                 end,
-                                                UIManager:close(dialog),
                                             },
                                             {
                                                 text = _("View Details"),

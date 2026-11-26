@@ -32,14 +32,7 @@ function FanficSearch:show(onDownloadCallback)
                             return
                         end
 
-                        UIManager:scheduleIn(1, function()
-                            onDownloadCallback(inputText)
-                        end)
-
-                        UIManager:show(InfoMessage:new({
-                            text = _("Downloading work may take some time…"),
-                            timeout = 1,
-                        }))
+                        onDownloadCallback(inputText)
 
                         UIManager:close(fanfic_lookup_dialog)
                     end,

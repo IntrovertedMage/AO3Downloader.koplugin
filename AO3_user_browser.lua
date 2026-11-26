@@ -3,8 +3,11 @@ local KeyValuePage = require("ui/widget/keyvaluepage")
 local UIManager = require("ui/uimanager")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
-local logger = require("logger")
 local InfoMessage = require("ui/widget/infomessage")
+local Cancellable = require("cancellable")
+local UIResult = require("ui_result")
+local AO3DownloaderClient = require("AO3_downloader_client")
+local _ = require("gettext")
 
 local AO3UserBrowser = {
     Fanfic = nil,
@@ -199,200 +202,115 @@ function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
 end
 
 function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
-    local success, works, getNextPage = self.Fanfic:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id)
-    if success then
-        works.total =  works.total or total or 0
-        self.Fanfic:onShowFanficBrowser(works, getNextPage)
-    else
-        self.ui:showMessageBox("Error", "Failed to fetch works for category: " .. tostring(category))
-    end
+    self.Fanfic:browse(_("Loading works…"), function(page)
+        return AO3DownloaderClient:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id, page)
+    end, total or 0)
 end
 
-function AO3UserBrowser:openUserSeriesList()
-    local success, seriesList, getNextPage = self.Fanfic:getSeriesFromUserPage(self.userData.username, self.userData.pseud)  --
-    if success then
-        local series_menu_kv = {}
-
-        local function insert_back_to_profile_item()
-            table.insert(series_menu_kv, 1, {
-                "← Back to profile",
+-- Shows a paged list of series or collections; tapping one browses its works.
+-- detailRows(item) returns the key/value rows shown under each item's title.
+function AO3UserBrowser:openPagedList(title, items, fetchNextPage, fetchWorks, detailRows)
+    local function buildMenu()
+        local kv_pairs = { {
+            "← Back to profile",
+            "",
+            separator = true,
+            callback = function()
+                self:GoUpInMenu()
+            end,
+        } }
+        for __, item in ipairs(items) do
+            table.insert(kv_pairs, {
+                item.title,
                 "",
                 separator = true,
                 callback = function()
-                    self:GoUpInMenu()
+                    self.Fanfic:browse(_("Loading works…"), function(page)
+                        return fetchWorks(item.id, page)
+                    end, item.work_count or 0)
                 end,
             })
-        end
-
-        local function add_series_to_menu(series)
-            table.insert(series_menu_kv, {
-                series.title,
-                "",
-                callback = function()
-                    local success, seriesWorks, fetchNextPage = self.Fanfic:getWorksFromSeries(series.id)
-                    if success == false then
-                        return
-                    end
-
-                    seriesWorks.total = series.work_count or 0
-                    self.Fanfic:onShowFanficBrowser(seriesWorks, fetchNextPage)
-                end,
-                separator = true,
-            })
-            table.insert(series_menu_kv,{
-                "Fandoms:"
-                , table.concat(series.fandoms, ", "),
-            })
-            table.insert(series_menu_kv,{
-                "Work count:"
-                , series.work_count,
-            })
-            table.insert(series_menu_kv,{
-                "Word count:"
-                , series.word_count,
-            })
-            table.insert(series_menu_kv,{
-                "Author:"
-                , series.author,
-            })
-            table.insert(series_menu_kv,{
-                "Date:"
-                , series.date_posted,
-            })
-            if series.summary and series.summary ~= "" then
-                table.insert(series_menu_kv,{
-                    "Summary:"
-                    , series.summary,
-                })
+            for __, row in ipairs(detailRows(item)) do
+                table.insert(kv_pairs, row)
             end
+            kv_pairs[#kv_pairs].separator = true
         end
-
-        local function refreshSeriesMenu()
-            series_menu_kv = {}
-            insert_back_to_profile_item()
-
-            for __, series in pairs(seriesList) do
-                add_series_to_menu(series)
-                series_menu_kv[#series_menu_kv].separator = true
-            end
-
-            table.insert(series_menu_kv, {
-                "Load more series…",
-                "",
-                callback = function()
-                    local extra_series_list = getNextPage()
-
-                    if #extra_series_list > 0 then
-                        for __, series in pairs(extra_series_list) do
-                            table.insert(seriesList, series)
-                        end
-
-                        refreshSeriesMenu()
-                        self:loadPage("Series", series_menu_kv, true)
-
-
-                    end
-                end,
-            })
+        if not fetchNextPage then
+            return kv_pairs
         end
-
-        refreshSeriesMenu()
-
-
-        self:GoDownInMenu("Series", series_menu_kv)
+        table.insert(kv_pairs, {
+            T("Load more %1…", title:lower()),
+            "",
+            callback = Cancellable.wrap(T(_("Loading more %1…"), title:lower()), function()
+                local more = fetchNextPage()
+                if not more then
+                    return -- error already shown; the row stays for a retry
+                end
+                if #more == 0 then
+                    fetchNextPage = nil
+                    UIManager:show(InfoMessage:new{ text = T(_("No more %1."), title:lower()), timeout = 2 })
+                end
+                for __, item in ipairs(more) do
+                    table.insert(items, item)
+                end
+                self:loadPage(title, buildMenu(), true)
+            end),
+        })
+        return kv_pairs
     end
+    self:GoDownInMenu(title, buildMenu())
 end
 
-function AO3UserBrowser:openUserCollectionsList()
-    local success, collectionsList, getNextPage = self.Fanfic:getCollectionsFromUserPage(self.userData.username)  --
-    if success then
-        local collections_menu_kv = {}
-
-        local function insert_back_to_profile_item()
-            table.insert(collections_menu_kv, 1, {
-                "← Back to profile",
-                "",
-                separator = true,
-                callback = function()
-                    self:GoUpInMenu()
-                end,
-            })
-        end
-
-        local function add_collection_to_menu(collection)
-            table.insert(collections_menu_kv, {
-                collection.title,
-                "",
-                callback = function()
-                    local success, collectionWorks, fetchNextPage = self.Fanfic:getWorksFromCollection(collection.id)
-                    if success == false then
-                        return
-                    end
-
-                    collectionWorks.total = collection.work_count or 0
-                    self.Fanfic:onShowFanficBrowser(collectionWorks, fetchNextPage)
-                end,
-                separator = true,
-            })
-            table.insert(collections_menu_kv,{
-                "Tags:"
-                , table.concat(collection.tags, ", "),
-            })
-            table.insert(collections_menu_kv,{
-                "Work count:"
-                , collection.work_count,
-            })
-            table.insert(collections_menu_kv,{
-                "Author:"
-                , collection.author,
-            })
-            table.insert(collections_menu_kv,{
-                "Date:"
-                , collection.date_posted,
-            })
-            if collection.summary and collection.summary ~= "" then
-                table.insert(collections_menu_kv,{
-                    "Summary:"
-                    , collection.summary,
-                })
-            end
-        end
-
-        local function refreshCollectionsMenu()
-            collections_menu_kv = {}
-            insert_back_to_profile_item()
-
-            for __, collection in pairs(collectionsList) do
-                add_collection_to_menu(collection)
-                collections_menu_kv[#collections_menu_kv].separator = true
-            end
-
-            table.insert(collections_menu_kv, {
-                "Load more collections…",
-                "",
-                callback = function()
-                    local extra_collections_list = getNextPage()
-
-                    if #extra_collections_list > 0 then
-                        for __, collection in pairs(extra_collections_list) do
-                            table.insert(collectionsList, collection)
-                        end
-
-                        refreshCollectionsMenu()
-                        self:loadPage("Collections", collections_menu_kv, true)
-                    end
-                end,
-            })
-        end
-
-        refreshCollectionsMenu()
-        self:GoDownInMenu("Collections", collections_menu_kv)
+-- Appends the summary row when there is one.
+local function withSummary(rows, summary)
+    if summary and summary ~= "" then
+        table.insert(rows, { "Summary:", summary })
     end
+    return rows
 end
 
-function AO3UserBrowser:openPseudsList()
-    local success, pseuds = self.Fanfic:getPseudsForUser(self.userData.username)
-    if success then
+AO3UserBrowser.openUserSeriesList = Cancellable.wrap(_("Loading series…"), function(self)
+    local series, fetchNextPage = UIResult.paged(function(page)
+        return AO3DownloaderClient:getUserSeries(self.userData.username, self.userData.pseud, page)
+    end)
+    if not series then
+        return
+    end
+    self:openPagedList("Series", series, fetchNextPage, function(id, page)
+        return AO3DownloaderClient:getWorksFromSeries(id, page)
+    end, function(item)
+        return withSummary({
+            { "Fandoms:", table.concat(item.fandoms, ", ") },
+            { "Work count:", item.work_count },
+            { "Word count:", item.word_count },
+            { "Author:", item.author },
+            { "Date:", item.date_posted },
+        }, item.summary)
+    end)
+end)
+
+AO3UserBrowser.openUserCollectionsList = Cancellable.wrap(_("Loading collections…"), function(self)
+    local collections, fetchNextPage = UIResult.paged(function(page)
+        return AO3DownloaderClient:getUserCollections(self.userData.username, page)
+    end)
+    if not collections then
+        return
+    end
+    self:openPagedList("Collections", collections, fetchNextPage, function(id, page)
+        return AO3DownloaderClient:getWorksFromCollection(id, page)
+    end, function(item)
+        return withSummary({
+            { "Tags:", table.concat(item.tags, ", ") },
+            { "Work count:", item.work_count },
+            { "Author:", item.author },
+            { "Date:", item.date_posted },
+        }, item.summary)
+    end)
+end)
+
+AO3UserBrowser.openPseudsList = Cancellable.wrap(_("Loading pseuds…"), function(self)
+    local pseuds = UIResult.unwrap(AO3DownloaderClient:getUserPseuds(self.userData.username))
+    if pseuds then
         local pseuds_menu_kv = {}
 
         table.insert(pseuds_menu_kv, {
@@ -409,14 +327,7 @@ function AO3UserBrowser:openPseudsList()
                 T("%1 (%2 works) (%3 recs)", pseud.name, pseud.works_count, pseud.recs_count),
                 "",
                 callback = function()
-                    local success, userData = self.Fanfic:getUserData(self.userData.username, pseud.name)
-                    if success then
-                        self:show(userData, self.ui, self.Fanfic)
-                    else
-                        UIManager:show(InfoMessage:new({
-                            text = T("Failed to fetch data for pseud: '%1'", pseud.name),
-                        }))
-                    end
+                    self.Fanfic:showUserInfo(self.userData.username, pseud.name)
                 end,
             })
 
@@ -426,11 +337,7 @@ function AO3UserBrowser:openPseudsList()
 
 
         self:GoDownInMenu("Other Pseuds", pseuds_menu_kv)
-    else
-        UIManager:show(InfoMessage:new({
-            text = T("Failed to fetch pseuds for user: '%1'", self.userData.username),
-        }))
     end
-end
+end)
 
 return AO3UserBrowser
