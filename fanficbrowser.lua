@@ -159,7 +159,8 @@ function FanficBrowser:generateTable(kv_pairs, ficResults)
 
             dialog = ButtonDialog:new({
 
-                title = T("Work %1: %2", string.find(v.author, ",") and "authors" or "author", v.author),
+                -- anonymous gift works have giftee buttons but no author
+                title = v.author and T("Work %1: %2", v.author:find(",") and "authors" or "author", v.author) or v.title,
                 buttons = buttons,
             })
             UIManager:show(dialog)
