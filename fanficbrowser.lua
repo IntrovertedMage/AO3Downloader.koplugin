@@ -14,9 +14,7 @@ local ITEMS_PER_FIC = 14 -- rows per work, so each page shows one work
 
 local FanficBrowser = {
     Fanfic = nil,
-    browse_window = nil,
-    title = nil,
-    pager = nil, -- UIResult.paged pager of the works shown
+    -- per window, set on the instance show() makes: browse_window, title, pager (UIResult.paged)
 }
 
 local BrowseWindow = KeyValuePage:extend{}
@@ -319,11 +317,11 @@ FanficBrowser.loadMore = Cancellable.wrap(_("Loading more works…"), function(s
 end)
 
 function FanficBrowser:show(Fanfic, pager, total)
-    self.Fanfic = Fanfic
-    self.title = T("(%1) Tap fanfic title to download", total or "?")
-    self.pager = pager
-    self.browse_window = nil
-    self:refresh()
+    FanficBrowser.Fanfic = Fanfic -- BrowseWindow:onClose reads it
+    setmetatable({
+        title = T("(%1) Tap fanfic title to download", total or "?"),
+        pager = pager,
+    }, { __index = FanficBrowser }):refresh()
 end
 
 return FanficBrowser

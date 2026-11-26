@@ -28,7 +28,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, Fanfic)
         local fandom_groups = {}
         local fandom_last_accessed = {}
         for __, fanfic in pairs(downloaded_fanfics) do
-            local fandoms = fanfic.fandoms or { _("Unknown Fandom") }
+            local fandoms = #fanfic.fandoms > 0 and fanfic.fandoms or { _("Unknown Fandom") }
             for __, fandom in pairs(fandoms) do
                 if not fandom_groups[fandom] then
                     fandom_groups[fandom] = {}
