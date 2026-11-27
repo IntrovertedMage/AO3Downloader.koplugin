@@ -7,6 +7,7 @@ local UIManager = require("ui/uimanager")
 local util = require("util")
 local logger = require("logger")
 local _ = require("gettext")
+local AO3Manager = require("AO3_manager")
 
 function util.contains(tableValue, value, comparisonFunction)
     logger.dbg(tableValue)
@@ -220,7 +221,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                     if value == "" then
                                         return
                                     end
-                                    local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                                    local success, tagSearchResults = AO3Manager:searchForTags(value, tagCatagoryForSearch)
                                     if success then
                                         self:tagSearchSelectionWidget(
                                             "Tap on character tags to add to filter",
@@ -404,7 +405,7 @@ function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settin
                         if value == "" then
                             return
                         end
-                        local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
+                        local success, tagSearchResults = AO3Manager:searchForTags(value, tagCatagoryForSearch)
                         if success then
                             self:singleTagSearchSelection(
                                 "Tap on character tags to add to filter",
@@ -452,9 +453,8 @@ function CustomFilterMenu:singleTagSearchSelection(title, tagSearchResults, sett
     self.menuWidget:GoDownInMenu(title, menu_items)
 end
 
-function CustomFilterMenu:show(menuWidget, fanfic)
+function CustomFilterMenu:show(menuWidget)
     self.menuWidget = menuWidget
-    self.fanfic = fanfic
 
     self.menuWidget:GoDownInMenu("Select filter", self:refreshMainMenu())
 end
@@ -1379,46 +1379,10 @@ function CustomFilterMenu:executeSearch()
         return
     end
     UIManager:scheduleIn(1, function()
-        local parameters = {
-            ["work_search[complete]"] = self.filter.completion_status or nil,
-            ["work_search[crossover]"] = self.filter.crossovers or nil,
-            ["work_search[single_chapter]"] = self.filter.single_chapter or nil,
-            ["work_search[word_count]"] = self.filter.word_count or nil,
-            ["work_search[language_id]"] = self.filter.language_id or nil,
-            ["work_search[date_from]"] = self.filter.date_from or nil,
-            ["work_search[date_to]"] = self.filter.date_to or nil,
-            ["work_search[fandom_names]"] = self.filter.fandom_names and table.concat(self.filter.fandom_names, ",")
-                or nil,
-            ["work_search[rating_ids]"] = self.filter.rating or nil,
-            ["work_search[archive_warning_ids][]"] = self.filter.warnings or nil,
-            ["exclude_work_search[archive_warning_ids][]"] = self.filter.exclude_warnings or nil,
-            ["work_search[category_ids][]"] = self.filter.categories or nil,
-            ["exclude_work_search[category_ids][]"] = self.filter.exclude_categories or nil,
-            ["work_search[character_names]"] = self.filter.characters and table.concat(self.filter.characters, ",")
-                or nil,
-            ["work_search[relationship_names]"] = self.filter.relationships
-                and table.concat(self.filter.relationships, ",")
-                or nil,
-            ["work_search[freeform_names]"] = self.filter.additional_tags
-                and table.concat(self.filter.additional_tags, ",")
-                or nil,
-            ["work_search[hits]"] = self.filter.hits or nil,
-            ["work_search[kudos_count]"] = self.filter.kudos or nil,
-            ["work_search[comments_count]"] = self.filter.comments or nil,
-            ["work_search[bookmarks_count]"] = self.filter.bookmarks or nil,
-            ["work_search[sort_column]"] = self.filter.sort_by or nil,
-            ["work_search[sort_direction]"] = self.filter.sort_direction or nil,
-            ["tag_id"] = self.filter.main_tag or nil,
-            ["work_search[excluded_tag_names]"] = table.concat({
-                self.filter.exclude_fandom_names and table.concat(self.filter.exclude_fandom_names, ",") or "",
-                self.filter.exclude_characters and table.concat(self.filter.exclude_characters, ",") or "",
-                self.filter.exclude_relationships and table.concat(self.filter.exclude_relationships, ",") or "",
-                self.filter.exclude_additional_tags and table.concat(self.filter.exclude_additional_tags, ",") or "",
-            }, ","),
-        }
-        local success, ficResults, fetchNextPage = self.fanfic:executeSearch(parameters)
+        self.filter.type = "works"
+        local status, searchResult = AO3Manager:executeSearch(self.filter)
 
-        if not success then
+        if not status then
             UIManager:show(InfoMessage:new({
                 text = _("Failed to fetch results for the custom filter."),
                 timeout = 2,
@@ -1427,10 +1391,7 @@ function CustomFilterMenu:executeSearch()
         end
 
         -- Show the results in the FanficBrowser
-        self.fanfic:onShowFanficBrowser(
-            ficResults,
-            fetchNextPage
-        )
+        FanficBrowser:show(searchResult)
     end)
 
     UIManager:show(InfoMessage:new({

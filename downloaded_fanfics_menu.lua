@@ -10,6 +10,7 @@ local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local UIManager = require("ui/uimanager")
 local Config = require("fanfic_config")
+local AO3Manager = require("AO3_manager")
 
 local DownloadedFanficsMenu = {}
 
@@ -29,8 +30,44 @@ local function normalizeField(field)
     end
 end
 
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
-    self.Fanfic = Fanfic
+function DownloadedFanficsMenu:formatFanficTitle(fanfic)
+    local fanfic_read = true
+    local first_unread_chapter = nil
+    local unread_count = 0
+    if fanfic.chapter_data and #fanfic.chapter_data > 0 then
+        for index, chapter in pairs(fanfic.chapter_data) do
+                if not chapter.read then
+                    fanfic_read = false
+                    unread_count = unread_count + 1
+                    first_unread_chapter = first_unread_chapter or index
+                end
+        end
+    else
+        fanfic_read = fanfic.read or false
+    end
+
+    local chapter_count, chapter_total = fanfic.chapters:match("([^//]+)/([^//]+)")
+    local fanfic_complete = true
+    if string.find(fanfic.chapters, "?") or chapter_count < chapter_total then
+        fanfic_complete = false
+    end
+
+    local prefix = "  "
+    if fanfic_read and (not fanfic_complete) then
+        prefix = "=" 
+    elseif fanfic_read and fanfic_complete then
+        prefix = "✓"
+    elseif (not fanfic_read) and (first_unread_chapter or 0) > 1 then
+        if Config:readSetting("show_current_chapter", true) then
+            prefix = "⛉" .. tostring(first_unread_chapter)
+        else
+            prefix = "•󠁏" .. tostring(unread_count)
+        end
+    end
+    return T("%1 (%2) %3 by %4", prefix, fanfic.chapters, fanfic.title, fanfic.author ~= "" and fanfic.author or "Anonymous")
+end
+
+function DownloadedFanficsMenu:show(parentMenu)
 
     local function refreshDownloadMenu()
         local downloaded_fanfics = DownloadedFanfics.getAll()
@@ -93,43 +130,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                     local submenu_items = {}
                     local fandom_fanfic_count = #fanfics
                     for __, fanfic in pairs(fanfics) do
-                        local fanfic_read = true
-                        local first_unread_chapter = nil
-                        local unread_count = 0
-                        if fanfic.chapter_data and #fanfic.chapter_data > 0 then
-                            for index, chapter in pairs(fanfic.chapter_data) do
-                                    if not chapter.read then
-                                        fanfic_read = false
-                                        unread_count = unread_count + 1
-                                        first_unread_chapter = first_unread_chapter or index
-                                    end
-                            end
-                        else
-                            fanfic_read = fanfic.read or false
-                        end
-
-                        local chapter_count, chapter_total = fanfic.chapters:match("([^//]+)/([^//]+)")
-                        local fanfic_complete = true
-                        if string.find(fanfic.chapters, "?") or chapter_count < chapter_total then
-                            fanfic_complete = false
-                        end
-
-                        local prefix = "  "
-                        if fanfic_read and (not fanfic_complete) then
-                            prefix = "=" 
-                        elseif fanfic_read and fanfic_complete then
-                            prefix = "✓"
-                      elseif (not fanfic_read) and (first_unread_chapter or 0) > 1 then
-
-                            if Config:readSetting("show_current_chapter", true) then
-                                prefix = "⛉" .. tostring(first_unread_chapter)
-                            else
-                                prefix = "•󠁏" .. tostring(unread_count)
-                            end
-                        end
-
                         table.insert(submenu_items, {
-                            text = T("%1 (%2) %3 by %4",prefix, fanfic.chapters, fanfic.title, fanfic.author ~= "" and fanfic.author or "anonymous"),
+                            text = self:formatFanficTitle(fanfic),
                             id = fanfic.id,
                             callback = function()
                                 -- Show options for the fanfic
@@ -144,7 +146,13 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                             DownloadedFanfics.update(fanfic)
 
                                             UIManager:close(dialog)
-                                            self.Fanfic:onOpenFanficReader(fanfic.path, fanfic)
+
+                                            FanficReader:show({
+                                                fanfic_path = fanfic.path,
+                                                current_fanfic = fanfic,
+                                                chapter_opening_at = nil,
+                                            })
+
                                         end,
                                     },
                                 }
@@ -159,7 +167,6 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
 
                                             UIManager:close(dialog)
                                             DownloadedFanficsMenu:showFanficChapterSelect(
-                                                ui,
                                                 fanfic,
                                                 parentMenu
                                             )
@@ -170,16 +177,14 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                 dialog = ButtonDialog:new({
                                     title = T(_("Options for '%1'"), fanfic.title),
                                     buttons = {
-                                        
-                                            open_buttons
-                                        ,
+                                        open_buttons,
                                         {
                                             {
                                                 text = _("Update"),
                                                 callback = function()
                                                     UIManager:scheduleIn(1, function()
                                                         -- Update the fanfic
-                                                        updateFanficCallback(fanfic)
+                                                        AO3Manager:UpdateFanfic(fanfic)
                                                         UIManager:close(dialog)
                                                     end)
                                                     UIManager:show(InfoMessage:new({
@@ -354,7 +359,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
     parentMenu:GoDownInMenu("Downloaded Works by Fandom", download_menu_items)
 end
 
-function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
+function DownloadedFanficsMenu:showFanficChapterSelect(fanfic, parentMenu)
     if not fanfic.chapter_data then
         return
     end
@@ -365,7 +370,11 @@ function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)
         table.insert(chapter_options, {
             text = (chapter.read and "✓ " or "") .. chapter.name,
             callback = function()
-                self.Fanfic:onOpenFanficReader(fanfic.path, fanfic, idx)
+                FanficReader:show({
+                    fanfic_path = fanfic.path,
+                    current_fanfic = fanfic,
+                    chapter_opening_at = idx,
+                })
             end,
         })
     end

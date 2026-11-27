@@ -1,4 +1,3 @@
-local Menu = require("ui/widget/menu")
 local _ = require("gettext")
 local FanficSearch = require("fanfic_search")
 local FanficBrowser = require("fanficbrowser")
@@ -11,11 +10,13 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
-local logger = require("logger")
+local FanficMenuWidget = require("fanfic_menu_widget")
 local CustomFilterMenu = require("custom_filter_menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local DownloadedFanfics = require("downloaded_fanfics")
+local MenuStack = require("menu_stack")
+local AO3Manager = require("AO3_manager")
 
 function util.contains(table, value)
     for _, v in ipairs(table) do
@@ -26,91 +27,44 @@ function util.contains(table, value)
     return false
 end
 
-local FanficMenuWidget = Menu:extend({
-    fanfic = nil,
-    is_popout = false,
-    is_borderless = true,
-    paths = nil,
-    title = "AO3 downloader",
-    subtitle = "",
-    lock_return = false,
-})
-
--- Menu action on return-arrow tap (go to one-level upper catalog)
-function FanficMenuWidget:onReturn()
-    if self.lock_return then
-        return
-    end
-    local path = self.paths[#self.paths]
-    if path then
-        self:switchItemTable(path.title, path.items, -1, -1, path.subtitle)
-        self.title = path.title
-        self.subtitle = path.subtitle
-        table.remove(self.paths, #self.paths)
-    end
-    return true
-end
-
-function FanficMenuWidget:GoDownInMenu(newTitle, newItems, newSubtitle)
-    table.insert(self.paths, {
-        title = self.title,
-        items = self.item_table,
-        subtitle = self.subtitle,
-    })
-    self:switchItemTable(newTitle, newItems, -1, -1, newSubtitle)
-    self.title = newTitle
-    self.subtitle = newSubtitle
-end
-
-function FanficMenuWidget:updateMenuBack(backAmount, newTitle, newItems, newSubtitle)
-    local currentBackMenu = self.paths[#self.paths]
-    local index = #self.paths - (backAmount - 1)
-    self.paths[index].title = newTitle or currentBackMenu.title
-    self.paths[index].items = newItems or currentBackMenu.items
-    self.paths[index].subtitle = newSubtitle or currentBackMenu.subtitle
-end
-
-function FanficMenuWidget:onClose()
-    self.Fanfic.menu_stack[self] = nil
-    return Menu.onClose(self)
-end
-
 local FanficMenu = {}
 
-function FanficMenu:show(fanfic)
-    self.fanfic = fanfic
+
+function FanficMenu:show()
+
+    local root_menu_items = {
+        {
+            text = "\u{f002} Search and download works from AO3",
+            callback = function()
+                self:onSearchFanficMenu()
+            end,
+        },
+        {
+            text = "\u{f15c} View downloaded fanfics",
+            callback = function()
+                DownloadedFanficsMenu:show(self.menuWidget)
+            end,
+        },
+        {
+            text = "\u{f007} Account",
+            callback = function()
+                self:onAccountManagementMenu()
+            end,
+        },
+        {
+            text = "\u{f013} Settings",
+            callback = function()
+                self:onOpenSettings()
+            end,
+        },
+    }
+
     self.menuWidget = FanficMenuWidget:new({
         title = _("AO3 downloader"),
-        item_table = {
-            {
-                text = "\u{f002} Search and download works from AO3",
-                callback = function()
-                    self:onSearchFanficMenu()
-                end,
-            },
-            {
-                text = "\u{2193} View downloaded fanfics",
-                callback = function()
-                    self:onViewDownloadedFanfics()
-                end,
-            },
-            {
-                text = "Account management",
-                callback = function()
-                    self:onAccountManagementMenu()
-                end,
-            },
-            {
-                text = "\u{2699} Settings",
-                callback = function()
-                    self:onOpenSettings()
-                end,
-            },
-        },
-        Fanfic = self.fanfic,
+        item_table = root_menu_items,
     })
 
-    self.fanfic.menu_stack[self.menuWidget] = true
+    MenuStack.menu_stack[self.menuWidget] = true
 
     return self.menuWidget
 end
@@ -133,13 +87,13 @@ function FanficMenu:refreshAccountManagementMenu()
         table.insert(menu_items, {
             text = "View your AO3 profile",
             callback = function()
-                self.fanfic:showUserInfo(self.username, self.username, self.menuWidget)
+                AO3Manager:showUserInfo(self.username, self.username)
             end,
         })
         table.insert(menu_items, {
             text = "Log out",
             callback = function()
-                self.logged_in = not self.fanfic:logoutOfAO3()
+                self.logged_in = not AO3Manager:logoutOfAO3()
                 self.menuWidget.item_table = self:refreshAccountManagementMenu()
                 self.menuWidget:updateItems()
             end,
@@ -151,7 +105,7 @@ end
 
 function FanficMenu:onAccountManagementMenu()
     local success
-    success, self.logged_in, self.username = self.fanfic:checkLoggedIn()
+    success, self.logged_in, self.username = AO3Manager:checkLoggedIn()
 
     if success then
         self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
@@ -187,7 +141,7 @@ function FanficMenu:enterUserDetails()
                     callback = function()
                         local myfields = self.login_dialog:getFields()
                         UIManager:close(self.login_dialog)
-                        self.logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        self.logged_in = AO3Manager:loginToAO3(myfields[1], myfields[2])
                         self.username = myfields[1]
                         self.menuWidget.item_table = self:refreshAccountManagementMenu()
                         self.menuWidget:updateItems()
@@ -229,7 +183,7 @@ function FanficMenu:onSearchFanficMenu()
         {
             text = _("Search using Filter search"), -- New menu item
             callback = function()
-                CustomFilterMenu:show(self.menuWidget, self.fanfic)
+                CustomFilterMenu:show(self.menuWidget)
             end,
         },
         {
@@ -262,7 +216,7 @@ end
 
 function FanficMenu:onShowFanficSearch()
     FanficSearch:show(function(fanficId)
-        self.fanfic:DownloadFanfic(fanficId)
+        AO3Manager:DownloadFanfic(fanficId)
     end)
 end
 
@@ -437,7 +391,7 @@ function FanficMenu:onSearchTag(category)
                         end
                         UIManager:scheduleIn(1, function()
                             local success
-                            success, tags = self.fanfic:searchForTags(query, category)
+                            success, tags = AO3Manager:searchForTags(query, category)
 
                             UIManager:close(searchDialog)
 
@@ -485,15 +439,12 @@ function FanficMenu:onBrowseByTag(selectedTag)
             text = option.text,
             callback = function()
                 UIManager:scheduleIn(1, function()
-                    local success, ficResults, fetchNextPage = self.fanfic:fetchFanficsByTag(selectedTag, option.value)
-                    if not success then
+                    local status, searchResult = AO3Manager:fetchFanficsByTag(selectedTag, option.value)
+                    if not status then
                         return
                     end
 
-                    self.fanfic:onShowFanficBrowser(
-                        ficResults,
-                        fetchNextPage
-                    )
+                    FanficBrowser:show(searchResult)
                 end)
                 UIManager:show(InfoMessage:new({
                     text = _("Downloading works data may take some time…"),
@@ -504,12 +455,6 @@ function FanficMenu:onBrowseByTag(selectedTag)
     end
 
     self.menuWidget:GoDownInMenu("Sort by...", menu_items)
-end
-
-function FanficMenu:onViewDownloadedFanfics()
-    DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, function(fanfic)
-        self.fanfic:UpdateFanfic(fanfic)
-    end, self.fanfic)
 end
 
 function FanficMenu:onSelectUserSearch()
@@ -549,7 +494,7 @@ function FanficMenu:onSelectUserSearch()
                                             username = user
                                             pseud = user
                                         end
-                                        self.fanfic:showUserInfo(username, pseud, self.menuWidget)
+                                        AO3Manager:showUserInfo(username, pseud)
                                         UIManager:close(dialog)
                                     end,
                                 },
@@ -610,8 +555,8 @@ function FanficMenu:onSearchUser()
                     callback = function()
                         local user_query = search_dialog:getInputText()
                         UIManager:close(search_dialog)
-                        local success, users, next_page = self.fanfic:searchForUsers(user_query)
-                        if not success then
+                        local success, users, next_page = AO3Manager:searchForUsers(user_query)
+                        if not success or not users then
                             return
                         end
                         local function generateMenuItems()
@@ -627,7 +572,7 @@ function FanficMenu:onSearchUser()
                                                     {
                                                         text = _("View user profile"),
                                                         callback = function()
-                                                            self.fanfic:showUserInfo(user.username, user.pseud, self.menuWidget)
+                                                            AO3Manager:showUserInfo(user.username, user.pseud)
                                                             UIManager:close(dialog)
                                                         end,
                                                     },
@@ -673,15 +618,12 @@ end
 
 function FanficMenu:onSelectAccountHistory(marked_for_later)
     UIManager:scheduleIn(1, function()
-        local success, ficResults, fetchNextPage = self.fanfic:getWorksFromAccountHistory(marked_for_later)
-        if not success then
+        local status, searchResult = AO3Manager:getWorksFromAccountHistory(marked_for_later)
+        if not status then
             return
         end
 
-        self.fanfic:onShowFanficBrowser(
-            ficResults,
-            fetchNextPage
-        )
+        FanficBrowser:show(searchResult)
     end)
     UIManager:show(InfoMessage:new({
         text = _("Downloading works data may take some time…"),
@@ -713,7 +655,7 @@ function FanficMenu:onOpenSettings()
 
 
         for _, fanfic_item in pairs(history) do
-            local filename = self.fanfic.GenerateFileName(fanfic_item)
+            local filename = AO3Manager.GenerateFileName(fanfic_item)
             local correct_path = Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub"
             DownloadedFanfics.changePath(fanfic_item.id, correct_path, true)
         end
